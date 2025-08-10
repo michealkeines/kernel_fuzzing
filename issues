@@ -1,0 +1,3 @@
+- make sure init, busybox in rootfs has execute permession
+- make sure init has proper newlines
+- make sure you have two filesystems, one initramfs that is zipped with cpio, that has come bins linkes, also rootfs that the img created using dd, create ext4 with mkfd.ext4, mount it, create new bins inside it

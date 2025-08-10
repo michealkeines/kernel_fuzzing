@@ -1,0 +1,84 @@
+106  mkdir kernel_dev
+  107  cd kernel_dev/
+  108  mv ../linux/
+  109  mv ../linux/ ./
+  110  ls
+  111  clear
+  112  ls
+  113  dd -h
+  114  man dd
+  115  cat /dev/zero 
+  116  man dd
+  117  ls
+  118  dd if=/dev/zero of=rootfs.img bs=1M count=64
+  119  ls
+  120  mkdir -p initramfs/{bin,sbin,sys,proc,dev,lib/modules,lib64,mnt,etc}
+  121  wget https://raw.githubusercontent.com/xerta555/Busybox-Binaries/refs/heads/master/busybox-arm64
+  122  ls
+  123  mv busybox-arm64 busybox
+  124  file busybox 
+  125  clear
+  126  cp busybox initramfs/bin/
+  127  cd initramfs/bin/
+  128  ls
+  129  ln -s busybox sh
+  130  ls
+  131  chmod +x busybox 
+  132  ls
+  133  ls -lah
+  134  ./sh 
+  135  ls
+  136  clear
+  137  ls
+  138  ls -s busybox mount
+  139  ln -s busybox mount
+  140  ls
+  141  ln -s busybox modprobe
+  142  ln -s busybox switch_root
+  143  cd ..
+  144  ls
+  145  vi initramfs/init
+  146  chmod +x initramfs/init 
+  147  clear
+  148  cd initramfs/
+  149  find . | cpio -o --format=newc | gzip > ../initramfs.cpio.gz
+  150  qemu-system-arm64 -machine vir -cpu cortex-a72 -nographic -m 2048 -kernel ../linux/arch/arm64/boot/Image -initrd ../initramfs.cpio.gz -drive file=
+  151  cd ..
+  152  qemu-system-arm64 -machine virt -cpu cortex-a72 -nographic -m 2048 -kernel linux/arch/arm64/boot/Image -initrd initramfs.cpio.gz -drive file=rootfs.img,format=raw,if=virtio -append "console=ttyAMA0"
+  153  history
+
+
+sudo bash build_rootfs.sh
+
+qemu-system-aarch64 \
+  -machine virt \
+  -cpu cortex-a72 \
+  -nographic \
+  -m 2048 \
+  -kernel linux/arch/arm64/boot/Image \
+  -initrd initramfs.cpio.gz \
+  -drive file=rootfs.img,format=raw,if=virtio \
+  -append "root=/dev/vda console=ttyAMA0" \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-device,netdev=net0
+
+ssh root@localhost -p 2222
+
+# this will wait for gdb to attach
+qemu-system-aarch64 \
+  -machine virt \
+  -cpu cortex-a72 \
+  -nographic \
+  -m 2048 \
+  -kernel linux/arch/arm64/boot/Image \
+  -initrd initramfs.cpio.gz \
+  -drive file=rootfs.img,format=raw,if=virtio \
+  -append "root=/dev/vda console=ttyAMA0" \
+  -netdev user,id=net0,hostfwd=tcp::2222-:22 \
+  -device virtio-net-device,netdev=net0 \
+  -s -S
+
+gdb-multiarch /kernel_dev/linux/vmlinux
+
+# inside gdb
+target remote :1234

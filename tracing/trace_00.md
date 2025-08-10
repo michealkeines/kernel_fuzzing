@@ -1,0 +1,3 @@
+- kernel need a need a file system to jump into, so we have the initramfs file system, this we just created with one busybox binary and we symlink it into multiple needed binaries, busybox single binary can emulate any kind of bin, example, if you need ls, we ln -s busybox ls
+- we also need to put init script under sbin/init, which kernel will run first, within that we can enable kenerel module that are need for fining actual root system like ext4, once it is enabled, we shoudl be seeing the actual root fs under some /dev/*, now mount that real rootfs into /mnt, the user chroot or switch_root to jump into that fs, that is all kernel is loaded
+

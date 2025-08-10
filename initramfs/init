@@ -1,0 +1,27 @@
+#!/bin/sh
+
+echo "[INITRAMFS] Init called, gonna load stuff";
+
+
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+echo "[INITRAMFS] Load kernel modules"
+
+mount virtio_blk
+mount ext4
+
+echo "[INITRAMFS] Sleeping till all devices are ready"
+sleep 3
+echo "[INITRAMFS] Listing /dev/v*"
+ls /dev/v*
+
+mount -t ext4 /dev/vda /mnt || {
+    echo "[INITRAMFS] Failed to mount /dev/vda /mnt"
+}
+
+ls -lah /mnt/sbin/
+cd /mnt
+echo "[INITRAMFS] Switch to actual root system"
+exec switch_root . "/sbin/init" "$@"

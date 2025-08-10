@@ -1,0 +1,8 @@
+#!/bin/sh
+
+echo "[REALFS] Booting real FS"
+
+mount -t proc none /proc
+mount -t sysfs none /sys
+
+exec /bin/sh
