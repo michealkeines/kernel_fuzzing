@@ -50,12 +50,18 @@
 
 sudo bash build_rootfs.sh
 
+make defconfig # default config
+make -j16
+
+cp vmlinux /mnt/hgfs/host_kernel_dev/linux/
+cp arch/arm64/boot/Image /mnt/hgfs/host_kernel_dev/linux/
+
 qemu-system-aarch64 \
   -machine virt \
   -cpu cortex-a72 \
   -nographic \
   -m 2048 \
-  -kernel linux/arch/arm64/boot/Image \
+  -kernel linux/Image \
   -initrd initramfs.cpio.gz \
   -drive file=rootfs.img,format=raw,if=virtio \
   -append "root=/dev/vda console=ttyAMA0" \
@@ -70,7 +76,7 @@ qemu-system-aarch64 \
   -cpu cortex-a72 \
   -nographic \
   -m 2048 \
-  -kernel linux/arch/arm64/boot/Image \
+  -kernel linux/Image \
   -initrd initramfs.cpio.gz \
   -drive file=rootfs.img,format=raw,if=virtio \
   -append "root=/dev/vda console=ttyAMA0" \
