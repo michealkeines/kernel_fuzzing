@@ -10,7 +10,6 @@
 .extern  el1_sync
 .extern  el1_irq
 .extern  el0_sync
-.extern  el0_irq
 
 // we need to have all the 16 exceptions handled
 // Exceptions are handler using the Base vector + vector index
@@ -31,13 +30,13 @@ vectors:
 
     // EL0 32-bit
     VEC el0_sync
-    VEC el0_irq
+    VEC el1_irq
     VEC .
     VEC .
 
     // EL0 64-bit
     VEC el0_sync
-    VEC el0_irq
+    VEC el1_irq
     VEC .
     VEC .
 

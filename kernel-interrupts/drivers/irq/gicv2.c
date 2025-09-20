@@ -19,7 +19,7 @@ static inline uint32_t r32(uint64_t a)
 
 void gic_init(void)
 {
-    w32(GICD_BASE + 0x100, 1); // Enable GIC, so other devices can register their interrupts
+    w32(GICD_BASE + 0x000, 1); // Enable GIC, so other devices can register their interrupts
 
     // enable vtimer, this is per-cpu irq, PPI27, so we need to write to ISENABLER0 (0x100)
     // this way our GIC will only listen for this interrupt, every other interrupt will be ignored by GIC
