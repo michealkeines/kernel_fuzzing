@@ -9,6 +9,9 @@ _start:
     // Mask all D, A, I, F, so we dont have any interrupts at this stage
     msr DAIFSet, #0xf
 
+    // switch betweein el1,0 with proper sp
+    //msr SPSel, #1
+
     // init SP for C runtime
     ldr x0, =_stack_top
     mov sp, x0
