@@ -1,0 +1,34 @@
+pkill qemu && rm -rf *.o kernel.elf
+clang --target=aarch64-none-elf -c arch/aarch64/start.s -o start.o
+clang --target=aarch64-none-elf -c arch/aarch64/vectors.s -o vectors.o
+clang --target=aarch64-none-elf -O2 -ffreestanding -nostdlib -c drivers/char/uart.c drivers/irq/gicv2.c core/timer.c core/handlers.c core/sched.c core/kmain.c user/user.c
+
+/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld -nostdlib -z max-page-size=4096 -o kernel.elf start.o vectors.o uart.o gicv2.o timer.o handlers.o sched.o kmain.o user.o
+
+qemu-system-aarch64 -M virt -cpu cortex-a53 -m 256M -nographic -serial mon:stdio -kernel kernel.elf -d guest_errors,int -accel hvf
+
+
+# QEMU_ARGS=(
+#   -M virt -cpu cortex-a53 -m 256M
+#   -nographic -serial mon:stdio
+#   -kernel kernel.elf
+#   -d guest_errors,int
+#   -accel hvf
+#   -S -gdb tcp::1234
+# )
+
+# # Start QEMU in background
+# qemu-system-aarch64 "${QEMU_ARGS[@]}" &
+# QEMU_PID=$!
+
+# echo $QEMU_PID > /tmp/test
+
+# # Small wait to ensure gdbstub is listening
+# sleep 0.2
+
+# # Launch GDB and connect
+# gdb -q kernel.elf \
+# -ex "b _start" \
+#   -ex "set architecture aarch64" \
+#   -ex "target remote :1234" 
+  
