@@ -1,0 +1,11 @@
+rm *.o && rm kernel.elf
+echo "cleaned"
+clang --target=aarch64-none-elf -c arch/aarch64/start.s -o start.o
+clang --target=aarch64-none-elf -c arch/aarch64/vectors.s -o vectors.o
+# clang --target=aarch64-none-elf -c user/busy.s -o busy.o
+clang --target=aarch64-none-elf -O2 -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/kmain.c core/timer.c drivers/irq/gicv2.c core/handlers.c
+
+/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld -nostdlib -z max-page-size=4096 -o kernel.elf start.o vectors.o uart.o kmain.o timer.o gicv2.o handlers.o
+
+qemu-system-aarch64 -M virt -cpu cortex-a53 -m 256M -nographic -serial mon:stdio -kernel kernel.elf -d guest_errors,int -accel hvf
+
