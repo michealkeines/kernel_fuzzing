@@ -2,6 +2,8 @@
 
 extern void uart_printf(const char* fmt, ...);
 
+static volatile uint64_t jiffies;
+
 /*
     we need to read from the current freq from special register (CNTFRQ_EL0)
     calculate the ticks from the freq
@@ -27,26 +29,25 @@ static inline uint64_t get_current_freq(void)
 
 static inline void write_freq(uint64_t freq)
 {
-    uart_printf("Freq going to be written\n");
+    // uart_printf("Freq going to be written\n");
     asm volatile (
         "msr CNTV_TVAL_EL0, %0"::"r"(freq)
     );
-    uart_printf("Freq written\n");
+    // uart_printf("Freq written\n");
 }
 
 static inline void enable_timmer(void)
 {
-    uint64_t val = 1;
     asm volatile (
-        "msr CNTV_CTL_EL0, %0"::"r"(val)
+        "msr CNTV_CTL_EL0, %0"::"r"(1ull)
     );
 }
 
 void write_ticks(void)
 {
     uint64_t current_freq = get_current_freq();
-    uart_printf("Current freq: %d\n", current_freq);
-    current_freq = current_freq / 10;
+    // uart_printf("Current freq: %d\n", current_freq);
+    current_freq = current_freq / 1000;
     write_freq(current_freq);
 }
 
@@ -58,5 +59,10 @@ void timer_init(void)
 
 void timer_handler(void)
 {
-    uart_printf("Timer tick\n");
+    jiffies++;
+
+    if (jiffies == 1000000) {
+        uart_printf("Timer tick\n");
+        jiffies = 0;
+    }
 }
