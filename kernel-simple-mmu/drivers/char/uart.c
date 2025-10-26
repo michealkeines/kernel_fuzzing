@@ -8,7 +8,7 @@ both parties will agree on a frame and baudrate
 #include <stdint.h>
 #include <stdarg.h>
 
-#define UART    0x09000000UL  // Base Address
+#define UART    0x82400000UL  // Base Address
 #define DR      (UART + 0x00) // Data register
 #define FR      (UART + 0x18) // Status Flag
 #define IBRD    (UART + 0x24)

@@ -1,9 +1,11 @@
 .section .text, "ax"
-.globl _start
+.global _start
 .extern kmain
 .extern __bss_start
 .extern __bss_end
 .extern vectors
+.extern _stack_top
+.extern mmu_init
 
 _start:
     // disable interrupts
@@ -27,7 +29,8 @@ _start:
     // Vector Base Address, EL1
 2:  ldr x0, =vectors
     msr VBAR_EL1, x0
-    isb
+
+    bl mmu_init
 
     bl  kmain
     b   .

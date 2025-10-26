@@ -73,9 +73,10 @@
 .globl vectors
 .globl first_user_enter
 
-.extern irq_dispatcher
-.extern schedule_next
-.extern syscall_dispatcher
+//.extern irq_dispatcher
+//.extern schedule_next
+//.extern syscall_dispatcher
+
 
 
 vectors:
@@ -128,7 +129,9 @@ not_syscall:
     b .
 
 default_entry: b .
-
+irq_dispatcher: b .
+schedule_next: b .
+syscall_dispatcher: b .
 first_user_enter:
     mov sp, x0;
     RESTORE_AND_ERET

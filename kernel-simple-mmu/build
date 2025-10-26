@@ -1,35 +1,36 @@
 rm *.o && rm kernel.elf
 pkill qemu
 echo "cleaned"
-clang --target=aarch64-none-elf -c arch/aarch64/start.s -o start.o
 clang --target=aarch64-none-elf -c arch/aarch64/vectors.s -o vectors.o
-# clang --target=aarch64-none-elf -c user/busy.s -o busy.o
-clang --target=aarch64-none-elf -O2 -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/kmain.c core/timer.c drivers/irq/gicv2.c core/handlers.c core/sched.c user/user.c
 
-/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld -nostdlib -z max-page-size=4096 -o kernel.elf start.o vectors.o uart.o kmain.o user.o sched.o timer.o gicv2.o handlers.o
+clang --target=aarch64-none-elf -c arch/aarch64/start.s -o start.o
+clang --target=aarch64-none-elf -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/kmain.c core/mmu.c
+/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld start.o kmain.o uart.o mmu.o vectors.o -o kernel.elf
 
-qemu-system-aarch64 -M virt -cpu cortex-a53 -m 256M -nographic -serial mon:stdio -kernel kernel.elf -d guest_errors,int -accel hvf
 
-# QEMU_ARGS=(
-#   -M virt -cpu cortex-a53 -m 256M
-#   -nographic -serial mon:stdio
-#   -kernel kernel.elf
-#   -d guest_errors,int
-#   -accel hvf
-#   -S -gdb tcp::1234
-# )
 
-# # Start QEMU in background
-# qemu-system-aarch64 "${QEMU_ARGS[@]}" &
-# QEMU_PID=$!
+QEMU_ARGS=(
+  -M virt -cpu cortex-a53 -m 2G
+  -machine virtualization=off
+  -nographic -serial mon:stdio
+  -device loader,file=kernel.elf,addr=0x80000000,cpu-num=0
+  -d all
+  -D qemu-%d.log
+  -accel tcg
+  -S -gdb tcp::1234
+)
 
-# echo $QEMU_PID > /tmp/test
+# Start QEMU in background
+qemu-system-aarch64 "${QEMU_ARGS[@]}" &
+QEMU_PID=$!
 
-# # Small wait to ensure gdbstub is listening
-# sleep 0.2
+echo $QEMU_PID > /tmp/test
 
-# # Launch GDB and connect
-# gdb -q kernel.elf \
-# -ex "b _start" \
-#   -ex "set architecture aarch64" \
-#   -ex "target remote :1234" 
+# Small wait to ensure gdbstub is listening
+sleep 0.2
+
+# Launch GDB and connect
+gdb -q kernel.elf \
+-ex "b _start" \
+  -ex "set architecture aarch64" \
+  -ex "target remote :1234" 
