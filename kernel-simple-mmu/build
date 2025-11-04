@@ -10,7 +10,7 @@ clang --target=aarch64-none-elf -ffreestanding -nostdlib -mgeneral-regs-only -c 
 
 
 QEMU_ARGS=(
-  -M virt -cpu cortex-a53 -m 2G
+  -M virt -cpu cortex-a53 -m 4G
   -machine virtualization=off
   -nographic -serial mon:stdio
   -device loader,file=kernel.elf,addr=0x80000000,cpu-num=0

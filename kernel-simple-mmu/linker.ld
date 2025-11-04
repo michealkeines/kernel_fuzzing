@@ -9,5 +9,5 @@ SECTIONS
         __bss_start = .;
         *(.bss*) *(COMMON) __bss_end = .;
     }
-    _stack_top = 0x80090000;
+    _stack_top = 0x800A0000;
 }

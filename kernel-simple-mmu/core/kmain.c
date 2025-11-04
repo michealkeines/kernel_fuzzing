@@ -10,5 +10,7 @@ void kmain(void)
     uart_init();
 
     uart_printf("Kernel Starting\n");
+
+    uart_printf("Kernel Inited\n");
     while (1) {int i = 1;}
 }
