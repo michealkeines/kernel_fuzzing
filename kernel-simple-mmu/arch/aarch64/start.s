@@ -32,7 +32,20 @@ _start:
 
     bl mmu_init
 
+    ldr x0, =0xFFFF000080000000
+    ldr x1, =0x0000000080000000
+    sub x2, x0, x1
+
+    adrp x3, virt_entry
+    add  x3, x3, :lo12:virt_entry
+
+    add x3, x3, x2
+
+    br x3
+
+virt_entry:
     bl  kmain
     b   .
+
 
 
