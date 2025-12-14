@@ -7,9 +7,11 @@
 #define PHYS_REGION_2_BASE 0x0000000009000000UL  // second block region
 #define VIRT_REGION_2_BASE 0xffff000082400000UL  // virtual for UART
 
-#define L0_BASE_PHYS   0x0000000080002000UL
-#define L1_BASE_PHYS   0x0000000080004000UL
-#define L2_BASE_PHYS   0x0000000080006000UL
+#define L0_BASE_PHYS   0x0000000080020000UL
+#define L1_BASE_PHYS   0x0000000080040000UL
+#define L2_BASE_PHYS   0x0000000080060000UL
+#define L2_0_BASE_PHYS   0x0000000080080000UL
+#define L2_1_BASE_PHYS   0x00000000800A0000UL
 
 #define DESC_VALID         (1UL << 0)
 #define DESC_TABLE         (1UL << 1)
@@ -17,20 +19,23 @@
 #define DESC_BLOCK         (1UL << 0)
 
 #define get_pa_identity(va) \
- 0xFFFF000000000000 | (va)
+ 0x0000FFFFFFFFFFFF & (va)
 // 01000 => 00100 => 00010 => 00001
 
 uint64_t allocate_mem(AllocateMem *mem, uint64_t size, BitIndex *res);
 
 bool set_bitmap(AllocateMem *mem, uint64_t size, BitIndex *res);
 
-bool map_pagetable_entry(uint64_t va, uint64_t total);
+bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total);
 
 
 static inline uint64_t calc_index_l0(uint64_t va) { return (va >> 39) & 0x1FF; }
 static inline uint64_t calc_index_l1(uint64_t va) { return (va >> 30) & 0x1FF; }
 static inline uint64_t calc_index_l2(uint64_t va) { return (va >> 21) & 0x1FF; }
-
+#define PTE_ATTR_NORMAL  (1ULL << 2)   // AttrIdx = 1
+#define PTE_SH_INNER     (3ULL << 8)
+#define PTE_AF           (1ULL << 10)
+#define PTE_AP_RW        (0ULL << 6)
 static inline uint64_t make_table_desc(uint64_t next_table_phys_base) {
     uint64_t desc = ((next_table_phys_base & ~0xFFFUL) >> 12) << 12;
     desc |= DESC_VALID | DESC_TABLE;
@@ -40,8 +45,10 @@ static inline uint64_t make_table_desc(uint64_t next_table_phys_base) {
 static inline uint64_t make_block_desc(uint64_t phys_base) {
     uint64_t desc = ((phys_base & ~0xFFFUL) >> 12) << 12;
     desc |= DESC_VALID | DESC_AF;  // valid + access flag
+    desc |= PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AF | PTE_AP_RW;
     return desc;
 }
+
 
 static inline void clear_table(uint64_t table_phys_base) {
     uint64_t *tbl = (uint64_t*)table_phys_base;
@@ -51,6 +58,15 @@ static inline void clear_table(uint64_t table_phys_base) {
 
 static inline void set_table_entry(uint64_t *table, uint64_t idx, uint64_t desc) {
     table[idx] = desc;
+       // Ensure the descriptor write is visible
+       __asm__ volatile("dsb ishst" ::: "memory");
+
+       // Invalidate TLB entry for this VA (or all if simpler)
+       __asm__ volatile("tlbi vmalle1" ::: "memory");
+   
+       // Ensure TLB invalidation completed
+       __asm__ volatile("dsb ish" ::: "memory");
+       __asm__ volatile("isb");
 }
 
 
@@ -60,6 +76,8 @@ void mmu_init(void)
     clear_table(L0_BASE_PHYS);
     clear_table(L1_BASE_PHYS);
     clear_table(L2_BASE_PHYS);
+    clear_table(L2_0_BASE_PHYS);
+    clear_table(L2_1_BASE_PHYS);
 
 
     // i need create identity mapping, that is why i need add entry for both va and pa
@@ -105,14 +123,27 @@ void mmu_init(void)
     // l2_desc2 = make_block_desc(PHYS_REGION_2_BASE);
     // set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
 
-    uint64_t mair = 0xFF;           // normal memory attributes
-    uint64_t tcr  = 0;
+    uint64_t mair =
+    (0x00ULL << 0) |     // AttrIdx 0: Device-nGnRnE
+    (0xFFULL << 8);  
 
-    tcr |= (0ULL << 14);   // TG0 = 4 KB
-    tcr |= (16ULL);        // T0SZ = 64 - 48 = 16 bits
-    tcr |= (2ULL << 30);   // TG1 = 4 KB
-    tcr |= (16ULL << 16);  // T1SZ = 16 bits
+    uint64_t tcr = 0;
 
+    tcr |= (16ULL << 0);    // T0SZ = 16 (48-bit)
+    tcr |= (16ULL << 16);   // T1SZ = 16 (48-bit)
+    
+    tcr |= (0ULL << 14);    // TG0 = 4KB
+    tcr |= (2ULL << 30);    // TG1 = 4KB
+    
+    tcr |= (3ULL << 12);    // SH0 = Inner Shareable
+    tcr |= (3ULL << 28);    // SH1 = Inner Shareable
+    
+    tcr |= (1ULL << 10);    // ORGN0 = WB
+    tcr |= (1ULL << 8);     // IRGN0 = WB
+    tcr |= (1ULL << 26);    // ORGN1 = WB
+    tcr |= (1ULL << 24);    // IRGN1 = WB
+    
+    tcr |= (5ULL << 32);    // IPS = 48-bit PA
     uint64_t ttbr1 = L0_BASE_PHYS;
 
     __asm__ volatile(
@@ -173,7 +204,7 @@ bool deallocate_mem(AllocateMem *mem, uint64_t index, uint8_t bit)
 
 BitIndex find_free(AllocateMem *mem)
 {
-	uint64_t index = 0;
+	uint64_t index = 15000;
 	uint8_t bit = 0;
 //	printf("Starting the loop \n");
 	for (;index <= 16385;)
@@ -199,11 +230,25 @@ BitIndex find_free(AllocateMem *mem)
 	BitIndex r = { .index = 0, .bit = 0, .valid = false };
 	return r;
 }
+#define PAGE_SHIFT 12
+#define PAGE_SIZE  (1UL << PAGE_SHIFT)
+
+#define PHYS_BASE_ADDR  0x800B0000UL
+#define PHYS_BASE_PAGE  (PHYS_BASE_ADDR >> PAGE_SHIFT)
+
+uint64_t bitindex_to_phys(BitIndex bi)
+{
+    uint64_t bitmap_page = bi.index * 8 + bi.bit;
+    uint64_t phys_page   = PHYS_BASE_PAGE + bitmap_page;
+    return phys_page << PAGE_SHIFT;
+}
 
 
 bool set_bitmap(AllocateMem *mem, uint64_t size, BitIndex *res)
 {
 	uint64_t t = 0;
+    uart_printf("size in setbitmap: %d\n", size);
+
 	for (uint64_t i = 0; i < size; ++i)
 	{
 		//printf("set_bitmap: %llu\n", i);	
@@ -248,22 +293,27 @@ update the page tables for the VA
 
 */
 
-void *kmalloc(AllocateMem *mem, uint64_t size)
+uint64_t kmalloc(AllocateMem *mem, uint64_t size)
 {
-    BitIndex *res = {0};
-    uint64_t total_allocated = allocate_mem(mem, size, res);
+    BitIndex res[64];
+    uart_printf("res: %l\n", res);
 
+    uint64_t total_allocated = allocate_mem(mem, size, res);
+    uart_printf("total allocated: %l\n", total_allocated);
     BitIndex current = res[0];
     uint64_t index = current.index;
+    uart_printf("current index: %d\n", index);
 
-    uint64_t pa = index * 4096;
+    uint64_t pa = bitindex_to_phys(current);
     // 0x1000 => 0xFFFF00000001000
-    uint64_t va = (pa | 0xFFFF00000000);
+    uint64_t va = (pa | 0xFFFF000000000000);
+    uart_printf("for va: %l\n", va);
 
     // map pages table entry for that va
-    bool allocated = map_pagetable_entry(va, total_allocated);
+    bool allocated = map_pagetable_entry(va, pa, total_allocated);
+    uart_printf("for allcoated done: %l\n", va);
 
-    return (void *)va;
+    return va;
 }
 
 
@@ -276,23 +326,35 @@ void *kmalloc(AllocateMem *mem, uint64_t size)
 
 
 */
-bool map_pagetable_entry(uint64_t va, uint64_t total) 
+bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total) 
 {
-
+    if (total > 1)
+    {
+        uart_printf("you odnt have that much ram");
+        return false;
+    }
+    // TODO: create separate L2 table for every index
     for (int64_t i = 0; i < total; ++i)
     {
+        // uint64_t current_l2 = (i == 0) ? L2_0_BASE_PHYS : L2_1_BASE_PHYS;
+        uint64_t current_l2 = L2_BASE_PHYS;
+        // va 0xffff000000000000 => 0x000000000000000
         uint64_t current_va = va + (4096 * i);
-        uint64_t pa = get_pa_identity(current_va);
         // i need to add a L1 entry
         uint64_t l1_idx = calc_index_l1(current_va);
-        uint64_t l1_desc = make_table_desc(pa);
+        uint64_t l1_desc = make_table_desc(current_l2);
         set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
-
+        // va 0x0000000000000000 => 0x000000000000000
+        l1_idx = calc_index_l1(pa);
+        l1_desc = make_table_desc(current_l2);
+        set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
         // i need to add a L2 entry
         uint64_t l2_idx = calc_index_l2(current_va);
         uint64_t l2_desc = make_block_desc(pa);
-        set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc);
-        
+        set_table_entry((uint64_t*)current_l2, l2_idx, l2_desc);
+        l2_idx = calc_index_l2(pa);
+        l2_desc = make_block_desc(pa);
+        set_table_entry((uint64_t*)current_l2, l2_idx, l2_desc);
     }
 
 

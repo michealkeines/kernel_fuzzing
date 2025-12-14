@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+extern void uart_printf(const char* fmt, ...);
 
 
 extern uint8_t __block_memory_start[];

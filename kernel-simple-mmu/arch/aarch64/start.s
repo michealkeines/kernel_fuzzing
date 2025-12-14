@@ -50,7 +50,7 @@ _start:
     br x3
 
 virt_entry:
-    ldp x0, x1, [sp], #16
+    mov x0, x13
     bl  kmain
     b   .
 

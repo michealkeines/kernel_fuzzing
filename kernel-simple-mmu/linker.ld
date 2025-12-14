@@ -17,5 +17,5 @@ SECTIONS
     __block_memory_start = .;
     . += 512 * 1024;
     __block_memory_end = .;
-    _stack_top = 0x00000000800A0000;
+    _stack_top = 0x00000000800F0000;
 }
