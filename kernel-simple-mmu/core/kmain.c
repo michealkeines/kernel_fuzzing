@@ -45,7 +45,7 @@ void kmain(uint64_t total_ram)
 	AllocateMem main = {0};
 
 	main.buffer = bitmap;
-	uint64_t si = 300;
+	uint64_t si = 16000;
 	uart_printf("allocating mem: %l\n", bitmap);
 	uint64_t test = kmalloc(&main, si);
 	uart_printf("pointer: %l\n", test);
@@ -56,10 +56,11 @@ void kmain(uint64_t total_ram)
 	((char*)(test))[1] = 'o';
 	((char*)(test))[2] = 'r';
 	((char*)(test))[3] = 'k';
+	((char*)(test))[13000] = 'f';
 	((char*)(test))[4] = '\0';
 	
 	uart_printf("name1: %l, %d\n", test, ((char*)test)[0]);
-	uart_printf("name2: %l, %d\n", test, ((char*)test)[1]);
+	uart_printf("name2: %l, %d\n", test, ((char*)test)[13000]);
 	uart_printf("name: %s\n", ((char*)test));
 
 	

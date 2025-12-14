@@ -45,7 +45,7 @@ static inline uint64_t make_table_desc(uint64_t next_table_phys_base) {
 static inline uint64_t make_block_desc(uint64_t phys_base) {
     uint64_t desc = ((phys_base & ~0xFFFUL) >> 12) << 12;
     desc |= DESC_VALID | DESC_AF;  // valid + access flag
-    desc |= PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AF | PTE_AP_RW;
+    // desc |= PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AF | PTE_AP_RW;
     return desc;
 }
 
@@ -58,15 +58,15 @@ static inline void clear_table(uint64_t table_phys_base) {
 
 static inline void set_table_entry(uint64_t *table, uint64_t idx, uint64_t desc) {
     table[idx] = desc;
-       // Ensure the descriptor write is visible
-       __asm__ volatile("dsb ishst" ::: "memory");
+    //    // Ensure the descriptor write is visible
+    //    __asm__ volatile("dsb ishst" ::: "memory");
 
-       // Invalidate TLB entry for this VA (or all if simpler)
-       __asm__ volatile("tlbi vmalle1" ::: "memory");
+    //    // Invalidate TLB entry for this VA (or all if simpler)
+    //    __asm__ volatile("tlbi vmalle1" ::: "memory");
    
-       // Ensure TLB invalidation completed
-       __asm__ volatile("dsb ish" ::: "memory");
-       __asm__ volatile("isb");
+    //    // Ensure TLB invalidation completed
+    //    __asm__ volatile("dsb ish" ::: "memory");
+    //    __asm__ volatile("isb");
 }
 
 
@@ -204,7 +204,7 @@ bool deallocate_mem(AllocateMem *mem, uint64_t index, uint8_t bit)
 
 BitIndex find_free(AllocateMem *mem)
 {
-	uint64_t index = 15000;
+	uint64_t index = 0;
 	uint8_t bit = 0;
 //	printf("Starting the loop \n");
 	for (;index <= 16385;)
@@ -233,7 +233,7 @@ BitIndex find_free(AllocateMem *mem)
 #define PAGE_SHIFT 12
 #define PAGE_SIZE  (1UL << PAGE_SHIFT)
 
-#define PHYS_BASE_ADDR  0x800B0000UL
+#define PHYS_BASE_ADDR  0x800B0000UL // this is our physical pages will mapped
 #define PHYS_BASE_PAGE  (PHYS_BASE_ADDR >> PAGE_SHIFT)
 
 uint64_t bitindex_to_phys(BitIndex bi)
@@ -291,6 +291,15 @@ PA 0x11000 => VA 0xffff000000011000
 
 update the page tables for the VA
 
+
+we cant use 0x000000000000 to 0x3ffffffffffff something, because qemu use it for something, ram is mapped at 0x800000000
+
+so we sshould keep our page table mapped from there too, it took a whole day to figure this issue, so next time
+
+remember, physical page entries are starting at this location
+
+we are already have l1 table used in mmu_init, we reuse that untill we use 1GP, next we will need new l1 table
+
 */
 
 uint64_t kmalloc(AllocateMem *mem, uint64_t size)
@@ -336,10 +345,13 @@ bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total)
     // TODO: create separate L2 table for every index
     for (int64_t i = 0; i < total; ++i)
     {
-        // uint64_t current_l2 = (i == 0) ? L2_0_BASE_PHYS : L2_1_BASE_PHYS;
-        uint64_t current_l2 = L2_BASE_PHYS;
+        // As our physical pages start from 8000000 something, we already have table entyr for it, that covers 1GP of l1, if need more we can use L2_0 or L2_1 TODO: make this dynamic
+        uint64_t current_l2 = (i == 0) ? L2_BASE_PHYS : L2_0_BASE_PHYS;
+        // uint64_t current_l2 = L2_BASE_PHYS;
         // va 0xffff000000000000 => 0x000000000000000
         uint64_t current_va = va + (4096 * i);
+
+        // TODO: currently pa is hardcoded, so for i = 1, we will same pa, that is gonna break things here
         // i need to add a L1 entry
         uint64_t l1_idx = calc_index_l1(current_va);
         uint64_t l1_desc = make_table_desc(current_l2);
