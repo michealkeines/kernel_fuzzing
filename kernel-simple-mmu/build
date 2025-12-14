@@ -4,8 +4,8 @@ echo "cleaned"
 clang --target=aarch64-none-elf -c arch/aarch64/vectors.s -o vectors.o
 
 clang --target=aarch64-none-elf -c arch/aarch64/start.s -o start.o
-clang --target=aarch64-none-elf -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/kmain.c core/mmu.c
-/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld start.o kmain.o uart.o mmu.o vectors.o -o kernel.elf
+clang --target=aarch64-none-elf -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/kmain.c core/mmu.c core/dtd.c
+/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld start.o kmain.o uart.o mmu.o vectors.o dtd.o -o kernel.elf
 
 # exit(1)
 
@@ -34,3 +34,5 @@ gdb -q kernel.elf \
 -ex "b _start" \
   -ex "set architecture aarch64" \
   -ex "target remote :1234" 
+
+

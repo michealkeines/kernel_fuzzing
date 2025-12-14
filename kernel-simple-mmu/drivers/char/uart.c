@@ -69,10 +69,42 @@ void uart_puts(const char* s)
     while(*s) uart_putc(*s++);
 }
 
+void uint2str(uint64_t d)
+{
+    // handle zero explicitly
+    if (d == 0) {
+        // uart_putc('k');
+        uart_putc('0');
+        return;
+    }
+
+    // handle negative numbers
+    // if (d < 0) {
+    //     uart_putc('-');
+    //     d = -d;
+    // }
+
+    char buf[2048];   // enough for 32-bit integers
+    int i = 0;
+
+    // extract digits (in reverse order)
+    while (d > 0 && i < sizeof(buf)) {
+        uint64_t digit = d % 10;
+        buf[i++] = '0' + digit;   // convert to ASCII
+        d = d / 10;
+    }
+
+    // print digits in correct order
+    while (--i >= 0) {
+        uart_putc(buf[i]);
+    }
+}
+
 void int2str(int d)
 {
     // handle zero explicitly
     if (d == 0) {
+        // uart_putc('k');
         uart_putc('0');
         return;
     }
@@ -107,13 +139,16 @@ int strulen(const char *s) {
 
 void uart_printf(const char* fmt, ...)
 {
+    // uart_putc('k');
     va_list fmt_args;
     int i = 0;
     va_start(fmt_args, fmt);
     // uart_puts(fmt);
     int full = strulen(fmt);
+    // uart_putc('1');
     while (i < full)
     {
+    // uart_putc('2');
         char current = fmt[i];
         // uart_putc(current);
         if (current != '%')
@@ -127,6 +162,7 @@ void uart_printf(const char* fmt, ...)
             char format_specifier = fmt[i];
             int c;
             int d;
+            uint64_t l;
             const char *s;
             switch (format_specifier)
             {
@@ -137,6 +173,10 @@ void uart_printf(const char* fmt, ...)
             case 'd':
                 d = va_arg(fmt_args, int);
                 int2str(d);
+                break;
+            case 'l':
+                l = va_arg(fmt_args, uint64_t);
+                uint2str(l);
                 break;
             case 's':
                 s = va_arg(fmt_args, char *);

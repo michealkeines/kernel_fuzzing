@@ -1,4 +1,5 @@
-#include <stdint.h>
+
+#include "mmu.h"
 
 
 #define PHYS_KERNEL_BASE   0x0000000080000000UL  // kernel load address
@@ -8,12 +9,23 @@
 
 #define L0_BASE_PHYS   0x0000000080002000UL
 #define L1_BASE_PHYS   0x0000000080004000UL
-#define L2_BASE_PHYS   0x0000000080008000UL
+#define L2_BASE_PHYS   0x0000000080006000UL
 
 #define DESC_VALID         (1UL << 0)
 #define DESC_TABLE         (1UL << 1)
 #define DESC_AF            (1UL << 10)
 #define DESC_BLOCK         (1UL << 0)
+
+#define get_pa_identity(va) \
+ 0xFFFF000000000000 | (va)
+// 01000 => 00100 => 00010 => 00001
+
+uint64_t allocate_mem(AllocateMem *mem, uint64_t size, BitIndex *res);
+
+bool set_bitmap(AllocateMem *mem, uint64_t size, BitIndex *res);
+
+bool map_pagetable_entry(uint64_t va, uint64_t total);
+
 
 static inline uint64_t calc_index_l0(uint64_t va) { return (va >> 39) & 0x1FF; }
 static inline uint64_t calc_index_l1(uint64_t va) { return (va >> 30) & 0x1FF; }
@@ -49,6 +61,14 @@ void mmu_init(void)
     clear_table(L1_BASE_PHYS);
     clear_table(L2_BASE_PHYS);
 
+
+    // i need create identity mapping, that is why i need add entry for both va and pa
+
+    // 0xffff000080000 => entry porting 0x800000 
+    // 0x80000000 => 0x8000000
+
+    // as soon as we enable MMU, we will get a fault
+    
     /* ---- L0: map kernel VA region ---- */
     uint64_t l0_idx = calc_index_l0(VIRT_KERNEL_BASE);
     uint64_t l0_desc = make_table_desc(L1_BASE_PHYS);
@@ -81,6 +101,10 @@ void mmu_init(void)
     uint64_t l2_desc2 = make_block_desc(PHYS_REGION_2_BASE);
     set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
 
+    // l2_idx = calc_index_l2(0x80a00000);
+    // l2_desc2 = make_block_desc(PHYS_REGION_2_BASE);
+    // set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
+
     uint64_t mair = 0xFF;           // normal memory attributes
     uint64_t tcr  = 0;
 
@@ -95,7 +119,7 @@ void mmu_init(void)
         "msr MAIR_EL1, %[mair]\n"
         "msr TCR_EL1,  %[tcr]\n"
         "msr TTBR1_EL1,%[ttbr1]\n"
-        "msr TTBR0_EL1,%[ttbr1]\n"
+        "msr TTBR0_EL1,%[ttbr1]\n" // TODO: fix this, user space should have access this page table entries
         "dsb ishst\n"
         "isb\n"
         "mrs x0, SCTLR_EL1\n"
@@ -109,6 +133,210 @@ void mmu_init(void)
         : [mair]"r"(mair), [tcr]"r"(tcr), [ttbr1]"r"(ttbr1)
         : "x0", "memory");
 }
+
+
+
+void *mem_block(uint64_t size)
+{
+    uint64_t MAX = 524288; 
+    if (size >= MAX) return 0;
+
+    return (void *) __block_memory_start;
+}
+
+
+
+
+
+bool check_free(AllocateMem *mem, uint64_t index, uint8_t bit)
+{
+	uint8_t temp = mem->buffer[index];
+	uint8_t v = 1;
+	v = v << bit; // here we will set the bit to one
+	if (temp & v) return false; // here we will OR it
+	return true;
+}
+
+bool deallocate_mem(AllocateMem *mem, uint64_t index, uint8_t bit)
+{
+	if (check_free(mem, index, bit)) return true;
+
+	uint8_t temp = mem->buffer[index];
+	uint8_t v = 0;
+
+	v = v << bit; // here we will set the bit to zero
+	mem->buffer[index] = v;
+
+
+	return check_free(mem, index, bit);
+}
+
+BitIndex find_free(AllocateMem *mem)
+{
+	uint64_t index = 0;
+	uint8_t bit = 0;
+//	printf("Starting the loop \n");
+	for (;index <= 16385;)
+	{
+		//printf("sd\n");
+		BitIndex i = { 
+			.index = index,
+			.bit = bit,
+			.valid = true
+		};
+	//	printf("found Index: %llu, %x\n", index, bit);
+		if(check_free(mem, index, bit)) return i;
+
+		bit += 1;
+		if (bit == 8) 
+		{
+			bit = 0;
+			index += 1;
+		}	
+	}
+//	printf("Ending the loop \n");
+	
+	BitIndex r = { .index = 0, .bit = 0, .valid = false };
+	return r;
+}
+
+
+bool set_bitmap(AllocateMem *mem, uint64_t size, BitIndex *res)
+{
+	uint64_t t = 0;
+	for (uint64_t i = 0; i < size; ++i)
+	{
+		//printf("set_bitmap: %llu\n", i);	
+		BitIndex val = find_free(mem);
+		if (val.valid) {
+		//printf("set_bitmap valid: %llu\n", i);	
+			uint8_t temp = mem->buffer[val.index];
+			uint8_t v = 1;
+			v = v << val.bit; // here we will set the bit to one
+			mem->buffer[val.index] = temp | v; // here we will OR it
+			t += 1;
+	//	printf("Result Index: %llu, %x\n", val.index, val.bit);
+			res[i] = val;
+		}
+	}
+
+	return (t == size ? true : false);
+}
+/*
+we are returning the total number of pages that are allocated and also the BitIndex within the map
+
+eg: lets saw we have 3 page
+
+17, 18, 19
+
+our res will be a array of BitIndex
+
+BitIndex for 17
+BitIndex for 18
+BitIndex for 19 
+
+to calculate the starting address of a page
+
+1 => 0x0 to 0x1000 => 0 to 4096
+2 => 0x1000 to 0x2000 => 4097 to 8192
+17 =>  0x10000 to 0x11000 => 4096 * 17 = 69632
+
+
+PA 0x11000 => VA 0xffff000000011000
+
+update the page tables for the VA
+
+*/
+
+void *kmalloc(AllocateMem *mem, uint64_t size)
+{
+    BitIndex *res = {0};
+    uint64_t total_allocated = allocate_mem(mem, size, res);
+
+    BitIndex current = res[0];
+    uint64_t index = current.index;
+
+    uint64_t pa = index * 4096;
+    // 0x1000 => 0xFFFF00000001000
+    uint64_t va = (pa | 0xFFFF00000000);
+
+    // map pages table entry for that va
+    bool allocated = map_pagetable_entry(va, total_allocated);
+
+    return (void *)va;
+}
+
+
+/*
+    - update kernel page table, what is the registry = TTBR1_EL1
+    - it can either have table discriptor or block discriptor
+
+    eg: 48bit va
+        0xFFFF000000001000 => 0x0000000000001000
+
+
+*/
+bool map_pagetable_entry(uint64_t va, uint64_t total) 
+{
+
+    for (int64_t i = 0; i < total; ++i)
+    {
+        uint64_t current_va = va + (4096 * i);
+        uint64_t pa = get_pa_identity(current_va);
+        // i need to add a L1 entry
+        uint64_t l1_idx = calc_index_l1(current_va);
+        uint64_t l1_desc = make_table_desc(pa);
+        set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
+
+        // i need to add a L2 entry
+        uint64_t l2_idx = calc_index_l2(current_va);
+        uint64_t l2_desc = make_block_desc(pa);
+        set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc);
+        
+    }
+
+
+    return true;
+}
+
+uint64_t allocate_mem(AllocateMem *mem, uint64_t size, BitIndex *res)
+{
+	if (size < 4096)
+	{
+		if (set_bitmap(mem, 1, res)) return 1;
+
+		return 0;
+	
+	}
+	uint64_t val = size / 4096;
+	uint64_t rem = size % 4096;
+	
+	if (val > 0 && rem > 0) val += 1;
+	
+	if (set_bitmap(mem, val, res)) return val;
+
+	return 0;
+}
+
+
+
+
+// void print_bit_index(BitIndex *res, uint64_t size)
+// {
+// 	for (uint64_t i = 0; i < size; ++i)
+// 	{
+// 		printf("Index: %llu, Bit: %x\n", res[i].index, res[i].bit);
+// 	}
+// }
+
+void free_pages(AllocateMem *mem, BitIndex *res, uint64_t size)
+{
+	for (uint64_t i = 0; i < size; ++i)
+	{
+		deallocate_mem(mem, res[i].index, res[i].bit);
+	}
+}
+
 
 
 // void mmu_init_4k_80000(void)

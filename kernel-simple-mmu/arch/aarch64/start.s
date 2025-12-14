@@ -6,10 +6,13 @@
 .extern vectors
 .extern _stack_top
 .extern mmu_init
+.extern get_total_ram
 
 _start:
     // disable interrupts
     msr daifset, #0xf
+
+    
 
     // select proper EL1 stack pointer
     msr spsel, #1
@@ -29,6 +32,9 @@ _start:
     // Vector Base Address, EL1
 2:  ldr x0, =vectors
     msr VBAR_EL1, x0
+    bl get_total_ram
+
+    mov x13, x0 // we are writing to x13, so make sure, in future if we chanages, x13 is not written
 
     bl mmu_init
 
@@ -44,6 +50,7 @@ _start:
     br x3
 
 virt_entry:
+    ldp x0, x1, [sp], #16
     bl  kmain
     b   .
 
