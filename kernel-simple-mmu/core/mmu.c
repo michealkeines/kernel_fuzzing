@@ -1,6 +1,6 @@
 
 #include "mmu.h"
-
+#include "../drivers/irq/gicv2.h"
 
 #define PHYS_KERNEL_BASE   0x0000000080000000UL  // kernel load address
 #define VIRT_KERNEL_BASE   0xffff000080000000UL  // kernel virtual base
@@ -10,9 +10,8 @@
 #define L0_BASE_PHYS   0x0000000080020000UL
 #define L1_BASE_PHYS   0x0000000080040000UL
 #define L2_BASE_PHYS   0x0000000080060000UL
-#define L2_0_BASE_PHYS   0x0000000080080000UL
-#define L2_1_BASE_PHYS   0x00000000800A0000UL
-
+#define L2_INDEX3_BASE_PHYS   0x0000000080070000UL // this is what we use in my kmalloc
+#define L3_INDEX0_BASE_PHYS 0x00000000800C0000UL 
 #define DESC_VALID         (1UL << 0)
 #define DESC_TABLE         (1UL << 1)
 #define DESC_AF            (1UL << 10)
@@ -21,6 +20,7 @@
 #define get_pa_identity(va) \
  0x0000FFFFFFFFFFFF & (va)
 // 01000 => 00100 => 00010 => 00001
+static uint64_t ALLOCATED = 0;
 
 uint64_t allocate_mem(AllocateMem *mem, uint64_t size, BitIndex *res);
 
@@ -32,6 +32,8 @@ bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total);
 static inline uint64_t calc_index_l0(uint64_t va) { return (va >> 39) & 0x1FF; }
 static inline uint64_t calc_index_l1(uint64_t va) { return (va >> 30) & 0x1FF; }
 static inline uint64_t calc_index_l2(uint64_t va) { return (va >> 21) & 0x1FF; }
+static inline uint64_t calc_index_l3(uint64_t va) { return (va >> 12) & 0x1FF; }
+
 #define PTE_ATTR_NORMAL  (1ULL << 2)   // AttrIdx = 1
 #define PTE_SH_INNER     (3ULL << 8)
 #define PTE_AF           (1ULL << 10)
@@ -41,12 +43,27 @@ static inline uint64_t make_table_desc(uint64_t next_table_phys_base) {
     desc |= DESC_VALID | DESC_TABLE;
     return desc;
 }
+// TODO: fix why we are not able to make the page in the L3
+static inline uint64_t make_l3_block_desc(uint64_t phys_base) {
+    uint64_t desc = (((phys_base << 0) & ~0xFFFUL));
+    desc |= DESC_VALID | DESC_TABLE | DESC_AF;
+    return desc;
+}
 
 static inline uint64_t make_block_desc(uint64_t phys_base) {
+    // zero the upper part
+    // right shift to zero the final 12 bits
+    // left shit to move it back to its orignal position
     uint64_t desc = ((phys_base & ~0xFFFUL) >> 12) << 12;
     desc |= DESC_VALID | DESC_AF;  // valid + access flag
     // desc |= PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AF | PTE_AP_RW;
     return desc;
+}
+
+static inline uint64_t make_page_entry(uint64_t physical_base) {
+    uint64_t desc = ((physical_base & ~0xFFFUL) >> 12) << 12;
+    desc |= DESC_VALID | DESC_TABLE;
+    return desc; 
 }
 
 
@@ -70,14 +87,25 @@ static inline void set_table_entry(uint64_t *table, uint64_t idx, uint64_t desc)
 }
 
 
+/*
+
+    L0 - we write to index 0
+    L1 - we write to index 2 (because our starting address id 0x80000000)
+    0x00000 -> 0x4000000 => 0
+    0x40000 -> 0x800000 => 1
+    0x80000 -> 0xc00000 => 2
+    L2 - two entries, 0 index for base and some address for uart, which is 0x824000000
+
+    L2 entries are 2mb blocks
+*/
 void mmu_init(void)
 {
     /* clear all tables */
     clear_table(L0_BASE_PHYS);
     clear_table(L1_BASE_PHYS);
     clear_table(L2_BASE_PHYS);
-    clear_table(L2_0_BASE_PHYS);
-    clear_table(L2_1_BASE_PHYS);
+    clear_table(L2_INDEX3_BASE_PHYS);
+    clear_table(L3_INDEX0_BASE_PHYS);
 
 
     // i need create identity mapping, that is why i need add entry for both va and pa
@@ -107,6 +135,7 @@ void mmu_init(void)
 
     /* ---- L2: block mapping 0x0000000080000000 → 0x80000000 ---- */
     uint64_t l2_idx = calc_index_l2(VIRT_KERNEL_BASE);
+    // uart_printf("main l2 index: %l\n", l2_idx);
     uint64_t l2_desc = make_block_desc(PHYS_KERNEL_BASE);
     set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc);
 
@@ -116,7 +145,16 @@ void mmu_init(void)
 
     /* ---- L2: second block (0x0000000082400000 → 0x90000000) ---- */
     l2_idx = calc_index_l2(VIRT_REGION_2_BASE);
+    // uart_printf("uart l2 index: %l\n", l2_idx);
     uint64_t l2_desc2 = make_block_desc(PHYS_REGION_2_BASE);
+    set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
+
+    // l2_idx = calc_index_l2(VIRTUAL_GICC_BASE);
+    // l2_desc2 = make_block_desc(GICC_BASE);
+    // set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
+
+    l2_idx = calc_index_l2(VIRTUAL_GICD_BASE);
+    l2_desc2 = make_block_desc(GICD_BASE);
     set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
 
     // l2_idx = calc_index_l2(0x80a00000);
@@ -232,8 +270,8 @@ BitIndex find_free(AllocateMem *mem)
 }
 #define PAGE_SHIFT 12
 #define PAGE_SIZE  (1UL << PAGE_SHIFT)
-
-#define PHYS_BASE_ADDR  0x800B0000UL // this is our physical pages will mapped
+// 0xffff000000000000 => 0x00000000800B0000
+#define PHYS_BASE_ADDR  0xC0000000UL // this is our physical pages will mapped
 #define PHYS_BASE_PAGE  (PHYS_BASE_ADDR >> PAGE_SHIFT)
 
 uint64_t bitindex_to_phys(BitIndex bi)
@@ -331,43 +369,103 @@ uint64_t kmalloc(AllocateMem *mem, uint64_t size)
     - it can either have table discriptor or block discriptor
 
     eg: 48bit va
-        0xFFFF000000001000 => 0x0000000000001000
+        0xFFFF000000001000 => 0x0000000080001000
 
 
+BUG:
+    0xffff000006000 => 0x800B0008
+    we writing to it
+    0xffff000006004 => 0x800B0010
+    if we try to read the first address, we would be starting from this base PA
+    0xffff000006008 => 0x800B0018
+
+    index = 3
+    = we were overwriting the base Physical address
+
+    we add one entry and we wrote soemting to it
+    we try to create new page entry, now the base address would be overwritten
 */
+
 bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total) 
 {
-    if (total > 1)
+    if (total > 20)
     {
         uart_printf("you odnt have that much ram");
         return false;
     }
+
+    uint64_t l1_global_va = 0xffff0000C0000000UL;
+    uint64_t l1_idx = calc_index_l1(l1_global_va);
+
+    if (l1_idx != 3)
+    {
+        uart_printf("we need mare ram bro, check this out here\n");
+        return false;
+    }
+
+    if (!ALLOCATED)
+    {
+        for (int i = 0; i < 512 * 10; i++)
+        {
+            __block_l2_memory_start[i] = 0;
+        }
+        clear_table(L3_INDEX0_BASE_PHYS);
+        /*
+        
+        lets say we access 0xffff0000C0000000
+
+        we find the L1 index for this and create L1 table
+
+        this L1 table will be the contant, as it will have 1GP of range
+
+        l1 index should be 3 in this case
+        */
+        uint64_t l1_desc = make_table_desc(L2_INDEX3_BASE_PHYS);
+        set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
+        ALLOCATED = 1; // really bad thing, modifing global static variable
+    };
+    // if we allocate 1 page of 2MB size, it is like allocating 512, 4kb pages
     // TODO: create separate L2 table for every index
     for (int64_t i = 0; i < total; ++i)
     {
-        // As our physical pages start from 8000000 something, we already have table entyr for it, that covers 1GP of l1, if need more we can use L2_0 or L2_1 TODO: make this dynamic
-        uint64_t current_l2 = (i == 0) ? L2_BASE_PHYS : L2_0_BASE_PHYS;
+        // As our physical pages start from 8000000 something, we already have table entyr for it, that covers 1GP of l1, if need more we can use L2_0 or L2_1
+        uint64_t current_l2 = L2_INDEX3_BASE_PHYS;
         // uint64_t current_l2 = L2_BASE_PHYS;
         // va 0xffff000000000000 => 0x000000000000000
         uint64_t current_va = va + (4096 * i);
+        // we also calculated pa
+        uint64_t physical_va = pa + (4096 * i);
 
-        // TODO: currently pa is hardcoded, so for i = 1, we will same pa, that is gonna break things here
-        // i need to add a L1 entry
-        uint64_t l1_idx = calc_index_l1(current_va);
-        uint64_t l1_desc = make_table_desc(current_l2);
-        set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
-        // va 0x0000000000000000 => 0x000000000000000
-        l1_idx = calc_index_l1(pa);
-        l1_desc = make_table_desc(current_l2);
-        set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
+        // va 0xffff000000001000 => 0x8000000
         // i need to add a L2 entry
         uint64_t l2_idx = calc_index_l2(current_va);
-        uint64_t l2_desc = make_block_desc(pa);
+        // for every l2 index, we need to create a new table l3 table
+        // we use the block + 512 as the logic to find the index
+        // if try ot alocode more there 10 l3 tables, we will get error, udpate this in linked
+        uint64_t l3_table_address = ((uint64_t)__block_l2_memory_start & 0x0000FFFFFFFFFFFF) + (512 * l2_idx);
+        // uint64_t l3_table_address = L3_INDEX0_BASE_PHYS; 
+        uint64_t l2_desc = make_table_desc(l3_table_address);
+	    uart_printf("index: %l, VA: %l, L2 index: %l => %l, L3 table: %l\n", i, current_va, l2_idx, pa, l3_table_address);
         set_table_entry((uint64_t*)current_l2, l2_idx, l2_desc);
-        l2_idx = calc_index_l2(pa);
-        l2_desc = make_block_desc(pa);
-        set_table_entry((uint64_t*)current_l2, l2_idx, l2_desc);
+
+
+        /* 
+
+        we confirmed, L2 index is 0, by writing a differnt l2 index and, we got a l2 fault
+
+        we write all 512 index in l3, and we still got a l3 fault
+
+        that mean, only thing that is left is to check the eactual lobk impl
+        
+        */
+
+        uint64_t l3_idx = calc_index_l3(current_va);
+        uart_printf("L3 index: %l\n", l3_idx);
+        uint64_t l3_desc = make_l3_block_desc(physical_va);
+        set_table_entry((uint64_t*)l3_table_address, l3_idx, l3_desc);
     }
+
+    uart_printf("Allocated Maps\n");
 
 
     return true;

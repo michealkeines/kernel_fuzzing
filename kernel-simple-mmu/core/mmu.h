@@ -9,6 +9,8 @@ extern void uart_printf(const char* fmt, ...);
 extern uint8_t __block_memory_start[];
 extern uint8_t __block_memory_end[];
 
+extern uint8_t __block_l2_memory_start[];
+
 typedef struct allocate_mem {
 	uint8_t *buffer;
 } AllocateMem;

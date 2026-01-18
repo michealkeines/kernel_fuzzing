@@ -17,5 +17,9 @@ SECTIONS
     __block_memory_start = .;
     . += 512 * 1024;
     __block_memory_end = .;
-    _stack_top = 0x00000000800F0000;
+    . = ALIGN(4096);
+    __block_l2_memory_start = .;
+    . += 512 * 10;
+    __block_l2_memory_end = .;
+    _stack_top = 0x00000000800F0000; # this is going below, that is writing over the block we inited previouly
 }

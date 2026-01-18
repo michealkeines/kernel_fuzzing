@@ -73,16 +73,15 @@
 .globl vectors
 .globl first_user_enter
 
-//.extern irq_dispatcher
-//.extern schedule_next
-//.extern syscall_dispatcher
-
+.extern irq_dispatcher
+.extern schedule_next
+.extern syscall_dispatcher
 
 
 vectors:
     // EL1t — took exception from EL1 using SP_EL0
     VEC el1_sync_entry   // synchronous exception
-    VEC el1_irq_entry    // IRQ interrupt
+    VEC el1_irq_entry    // IRQ interrupt, we need this to be done
     VEC default_entry    // FIQ (unused)
     VEC default_entry    // SError (unused)
 
@@ -99,13 +98,23 @@ vectors:
     VEC default_entry
 
     // EL0 64-bit
-    VEC el0_sync_entry
+    VEC el0_sync_entry // we need this to be done
     VEC el1_irq_entry
     VEC default_entry
     VEC default_entry
 
 
-el1_sync_entry: 
+el1_sync_entry:
+    // https://developer.arm.com/documentation/ddi0601/2025-12/AArch64-Registers/ESR-EL1--Exception-Syndrome-Register--EL1-
+    // [31:26] bit is the one that hold the exception information
+    // so we shift 26 times, to move the 26th bit to the 0th bit
+    // 0b010101 or 0x15 is the SVC exception, that is the syscall
+    mrs x10, ESR_EL1
+    lsr x11, x10, #26
+    cmp x11, #0x15
+    b.ne not_syscall
+
+    bl syscall_dispatcher
     eret
 
 el1_irq_entry:
@@ -121,17 +130,25 @@ el0_sync_entry:
     lsr x11, x10, #26
     cmp x11, #0x15
     b.ne not_syscall
-
+    mov x3, x0
+    mov x4, x1
+    mov x5, x2
+    mov x4, x11
+    bic x4, x4, #0x000000000000ffff // take the lower 15:0 bit into x0
+    mov x0, x4
+    mov x1, x3
+    mov x2, x4
+    mov x3, x5
+    // 1st arg syscall num
     bl syscall_dispatcher
     eret
 
 not_syscall:
-    b .
+    eret
 
-default_entry: b .
-irq_dispatcher: b .
-schedule_next: b .
-syscall_dispatcher: b .
+default_entry: eret
+// irq_dispatcher: eret
+syscall_dispatcher: eret 
 first_user_enter:
     mov sp, x0;
     RESTORE_AND_ERET

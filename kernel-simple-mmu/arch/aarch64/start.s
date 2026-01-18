@@ -7,6 +7,7 @@
 .extern _stack_top
 .extern mmu_init
 .extern get_total_ram
+.extern gic_init
 
 _start:
     // disable interrupts
@@ -32,6 +33,7 @@ _start:
     // Vector Base Address, EL1
 2:  ldr x0, =vectors
     msr VBAR_EL1, x0
+    // bl gic_init
     bl get_total_ram
 
     mov x13, x0 // we are writing to x13, so make sure, in future if we chanages, x13 is not written
