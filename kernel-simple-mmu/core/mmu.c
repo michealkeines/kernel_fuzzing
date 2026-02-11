@@ -7,6 +7,8 @@
 #define PHYS_REGION_2_BASE 0x0000000009000000UL  // second block region
 #define VIRT_REGION_2_BASE 0xffff000082400000UL  // virtual for UART
 
+#define STACK_TOP 0x00000000801F0000UL // top of the stack hardcoded in linker script
+
 #define L0_BASE_PHYS   0x0000000080020000UL
 #define L1_BASE_PHYS   0x0000000080040000UL
 #define L2_BASE_PHYS   0x0000000080060000UL
@@ -14,7 +16,9 @@
 #define L3_INDEX0_BASE_PHYS 0x00000000800C0000UL 
 #define DESC_VALID         (1UL << 0)
 #define DESC_TABLE         (1UL << 1)
+#define DESC_PAGE         (1UL << 1)
 #define DESC_AF            (1UL << 10)
+#define DESC_AP            (1UL << 6) // https://developer.arm.com/documentation/ddi0406/c/System-Level-Architecture/Virtual-Memory-System-Architecture--VMSA-/Memory-access-control/Access-permissions?lang=en
 #define DESC_BLOCK         (1UL << 0)
 
 #define get_pa_identity(va) \
@@ -43,10 +47,32 @@ static inline uint64_t make_table_desc(uint64_t next_table_phys_base) {
     desc |= DESC_VALID | DESC_TABLE;
     return desc;
 }
+
+#define PXN_BIT (1ULL << 52)
+#define UXN_BIT (1ULL << 53) // shift is not gonna do anything, we keep to show the bit index
+#define UXN_BIT1 (1ULL << 54) // shift is not gonna do anything, we keep to show the bit index
+
 // TODO: fix why we are not able to make the page in the L3
 static inline uint64_t make_l3_block_desc(uint64_t phys_base) {
     uint64_t desc = (((phys_base << 0) & ~0xFFFUL));
-    desc |= DESC_VALID | DESC_TABLE | DESC_AF;
+    desc |= DESC_VALID | DESC_PAGE | DESC_AF | DESC_AP;
+
+    // desc |= (1ULL << 2);
+    // desc &= ~PXN_BIT;
+    // desc &= ~UXN_BIT;
+    // desc &= ~UXN_BIT1;
+
+    /*
+    every page can set this 8bit index
+
+    this index value will be registered in MAIR register
+
+    by defaultt we have 0, we are asking to use the 0th index
+
+    
+    */
+
+    // uart_printf("l3 %l\n", desc);
     return desc;
 }
 
@@ -57,6 +83,7 @@ static inline uint64_t make_block_desc(uint64_t phys_base) {
     uint64_t desc = ((phys_base & ~0xFFFUL) >> 12) << 12;
     desc |= DESC_VALID | DESC_AF;  // valid + access flag
     // desc |= PTE_ATTR_NORMAL | PTE_SH_INNER | PTE_AF | PTE_AP_RW;
+    // uart_printf("\nmakeblockdesc %l\n", desc);
     return desc;
 }
 
@@ -157,13 +184,26 @@ void mmu_init(void)
     l2_desc2 = make_block_desc(GICD_BASE);
     set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
 
+    l2_idx = calc_index_l2(STACK_TOP);
+    l2_desc2 = make_block_desc(STACK_TOP);
+    set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
+
     // l2_idx = calc_index_l2(0x80a00000);
     // l2_desc2 = make_block_desc(PHYS_REGION_2_BASE);
     // set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
+/*
+the page/table descriptor must set the INDX field (bits [4:2]) to specify which memory attribute set in the MAIR register applies to that page.
 
+
+Attr0 (INDX=0): 0xFF — Normal memory, Inner/Outer Write-Back, Read/Write-Allocate, Non-transient. 
+Attr1 (INDX=1): 0x04 — Device memory, nGnRE (non-Gathering, non-Reordering, Early Write Acknowledgement). 
+Attr2 (INDX=2): 0x00 — Device memory, nGnRnE (non-Gathering, non-Reordering, non-Early Write Acknowledgement). 
+Attr3 (INDX=3): 0x44 — Normal Non-cacheable memory (Inner/Outer Non-cacheable). 
+Attr4 (INDX=4): 0xFF — Often used for normal memory with full cacheability (same as Attr0). 
+Attr5–7: Platform-specific; may define tagged memory (e.g., MTE), or other custom types.*/
     uint64_t mair =
     (0x00ULL << 0) |     // AttrIdx 0: Device-nGnRnE
-    (0xFFULL << 8);  
+    (0xFFULL << 8);      // AttrIdx 1: Normal Memory 
 
     uint64_t tcr = 0;
 
@@ -183,6 +223,7 @@ void mmu_init(void)
     
     tcr |= (5ULL << 32);    // IPS = 48-bit PA
     uint64_t ttbr1 = L0_BASE_PHYS;
+    uint64_t ttbr0 = USER_PROCESS_1_TABLE_START; // we cant  do this here because, for some reason the ttbr0 table is being used in EL1, current guess is that we are trying to access an address that doest ahve top bits set
 
     __asm__ volatile(
         "msr MAIR_EL1, %[mair]\n"
@@ -199,10 +240,61 @@ void mmu_init(void)
         "dsb sy\n"
         "isb\n"
         :
-        : [mair]"r"(mair), [tcr]"r"(tcr), [ttbr1]"r"(ttbr1)
+        : [mair]"r"(mair), [tcr]"r"(tcr), [ttbr1]"r"(ttbr1), [ttbr0]"r"(ttbr0)
         : "x0", "memory");
 }
 
+
+void map_user_to_physical(uint64_t id, uint64_t address)
+{
+    // Identity map from user space to physical range
+
+    uint64_t l0 = (id == 1) ? USER_PROCESS_1_TABLE_START : USER_PROCESS_2_TABLE_START; // TODO: make this dynamic in future
+    uint64_t l1 = l0 + 0x00010000UL; // 1GB
+    uint64_t l2 = l1 + 0x00010000UL; // 2MB
+    uint64_t l3 = l2 + 0x00010000UL; // 4KB
+
+    uint64_t l0_idx = calc_index_l0(address);
+    uint64_t l0_desc = make_table_desc(l1);
+    set_table_entry((uint64_t*)l0, l0_idx, l0_desc);
+
+    uint64_t l1_idx = calc_index_l1(address);
+    uint64_t l1_desc = make_table_desc(l2);
+    set_table_entry((uint64_t*)l1, l1_idx, l1_desc);
+
+    uint64_t l2_idx = calc_index_l2(address);
+    uint64_t l2_desc = make_table_desc(l3);
+    set_table_entry((uint64_t*)l2, l2_idx, l2_desc);
+
+    uint64_t l3_idx = calc_index_l3(address);
+    uint64_t l3_desc = make_l3_block_desc(address);
+    set_table_entry((uint64_t*)l3, l3_idx, l3_desc);
+}
+void map_user_to_physical_test(uint64_t id, uint64_t address)
+{
+    // Identity map from user space to physical range
+
+    uint64_t l0 = (id == 1) ? USER_PROCESS_1_TABLE_START : USER_PROCESS_2_TABLE_START; // TODO: make this dynamic in future
+    uint64_t l1 = l0 + 0x00010000UL; // 1GB
+    uint64_t l2 = l1 + 0x00010000UL; // 2MB
+    uint64_t l3 = l2 + 0x00010000UL; // 4KB
+
+    uint64_t l0_idx = calc_index_l0(address);
+    uint64_t l0_desc = make_table_desc(l1);
+    set_table_entry((uint64_t*)l0, l0_idx, l0_desc);
+
+    uint64_t l1_idx = calc_index_l1(address);
+    uint64_t l1_desc = make_table_desc(l2);
+    set_table_entry((uint64_t*)l1, l1_idx, l1_desc);
+
+    uint64_t l2_idx = calc_index_l2(address);
+    uint64_t l2_desc = make_table_desc(l3);
+    set_table_entry((uint64_t*)l2, l2_idx, l2_desc);
+
+    uint64_t l3_idx = calc_index_l3(address);
+    uint64_t l3_desc = make_l3_block_desc(address);
+    set_table_entry((uint64_t*)l3, l3_idx, l3_desc);
+}
 
 
 void *mem_block(uint64_t size)

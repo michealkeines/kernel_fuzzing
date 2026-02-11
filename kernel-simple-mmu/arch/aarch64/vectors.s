@@ -3,10 +3,11 @@
     .space 128-4
 .endm
     .set CTX_X,        0
-    .set CTX_SP_EL0,   (31*8)
-    .set CTX_ELR,      (32*8)
+    .set CTX_TTBR0_EL1, (34*8)
     .set CTX_SPSR,     (33*8)
-    .set CTX_SIZE,     (34*8)
+    .set CTX_ELR,      (32*8)
+    .set CTX_SP_EL0,   (31*8)
+    .set CTX_SIZE,     (34*8) // this is the total number of 8 bytes values store in stack
 
     .macro SAVE_CONTEXT
         sub     sp, sp, #CTX_SIZE
@@ -36,10 +37,14 @@
         str     x0, [sp, #CTX_ELR]
         mrs     x0, SPSR_EL1
         str     x0, [sp, #CTX_SPSR]
+        mrs     x0, TTBR0_EL1
+        str     x0, [sp, #CTX_TTBR0_EL1]
     .endm
 
     .macro RESTORE_AND_ERET
         // we are reading the values based on offsets from the Context struct
+        ldr     x1, [sp, #CTX_TTBR0_EL1]
+        msr     TTBR0_EL1, x1
         ldr     x1, [sp, #CTX_SP_EL0]
         msr     SP_EL0, x1
         ldr     x1, [sp, #CTX_ELR]

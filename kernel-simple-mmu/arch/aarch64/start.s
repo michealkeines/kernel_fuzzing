@@ -40,6 +40,10 @@ _start:
 
     bl mmu_init
 
+    // ldr x0, =vectors // 0x8000xxxx to 0xffff00008000xxxx
+    ldr x0, =0xffff000080002000
+    msr VBAR_EL1, x0
+
     ldr x0, =0xFFFF000080000000
     ldr x1, =0x0000000080000000
     sub x2, x0, x1

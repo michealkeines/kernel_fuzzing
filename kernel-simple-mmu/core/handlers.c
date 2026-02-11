@@ -36,6 +36,20 @@ uint64_t syscall_dispatcher(uint64_t syscall_num, uint64_t arg1, uint64_t arg2, 
     return result;
 }
 
+uint64_t check_current_el(void)
+{
+    uint64_t spsr;
+    uint64_t current_el;
+
+    __asm__ volatile (
+        "mrs %0, SPSR_EL1\n"
+        "ubfx %1, %0, #2, #2\n"
+        : "=r"(spsr), "=r"(current_el) : : "memory" 
+    );
+
+    return current_el == 0x1;
+}
+
 void test_test() 
 {
     volatile int a = 1;
@@ -51,8 +65,20 @@ Context *irq_dispatcher(Context *context)
     {
         case 27:
             timer_irq_handler();
-            uart_printf("Timer IRQ handler fired for return address %l\n", context->elr_el1);
-            context = schedule_on_tick(context);
+
+            uint64_t el = check_current_el();
+            uart_printf("Timer IRQ handler fired for return address %l , EL: %l\n", context->elr_el1, el);
+            /*
+            currently we are assuming if something comes from EL1, we dont have run schedule on tick
+
+            case:
+            - timer iterrupts when we have yet jumped into process
+            - incase the userprocess is inside EL1 for a syscall, then we should not interrupt it
+            */
+            if (!el)
+            {
+                context = schedule_on_tick(context);
+            }
             // enable_cntv();
             break;
         // TODO: Add future IRQ handlers here

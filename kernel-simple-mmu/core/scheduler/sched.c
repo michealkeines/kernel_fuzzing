@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+extern void uart_printf(const char* fmt, ...);
 extern void uart_puts(const char*);
 extern void timer_program_next_tick(void);
 extern void gic_eoi(unsigned int);
@@ -12,7 +13,7 @@ static Task *rq_head = 0;
 static Task *rq_tail = 0;
 static Task *current = 0;
 
-static int RR_SLICE_TICKS = 10000;
+static int RR_SLICE_TICKS = 10;
 
 static inline void rq_push(Task *t)
 {
@@ -125,7 +126,7 @@ void sched_set_current(Task *t)
 
 Context *schedule_on_tick(Context *tf)
 {
-    return tf;
+    // return tf;
     // unsigned iar = gic_ack();
     // unsigned id  = iar & 0x3ffu;
     Task *next = 0;
@@ -134,15 +135,18 @@ Context *schedule_on_tick(Context *tf)
     if (current && current->state == RUNNING)
     {
         current->context = tf;
-        // uart_puts("Done one Tick, we are in EL1\n");
+
+        // uart_printf("current context: %l => slice: %l\n", tf, current->slice_left);
+        // uart_puts("Done one Tick before, we are in EL1\n");
 
         if (--current->slice_left > 0)
         {
+        // uart_puts("timeslize still existin, we are in EL1\n");
             // set_cntv();
             // gic_eoi(iar);
             return current->context;
         }
-        // uart_puts("Done one Tick, we are in EL1\n");
+        uart_puts("Done one Tick after, we are in EL1\n");
         // no time left, we push it to back if the ready queue
         current->slice_left = RR_SLICE_TICKS;
         current->state = READY;
@@ -178,7 +182,7 @@ Context *schedule_on_tick(Context *tf)
 
     next->state = RUNNING;
     current = next;
-    // uart_puts("Done one Tick, we are in EL1\n");
+    uart_puts("Done one Tick, we are in EL1\n");
     uart_puts("\nset-running--");
     uart_puts(current->name);
     uart_puts("--set-running\n");

@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 extern void uart_printf(const char* fmt, ...);
+#define USER_PROCESS_1_TABLE_START 0x800F0000UL
+#define USER_PROCESS_2_TABLE_START (USER_PROCESS_1_TABLE_START + 0x00060000UL)
+
 
 
 extern uint8_t __block_memory_start[];
