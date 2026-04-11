@@ -1,0 +1,56 @@
+rm *.o && rm kernel.elf
+pkill qemu
+echo "cleaned"
+clang --target=aarch64-none-elf -c arch/aarch64/vectors.s -o vectors.o
+
+clang --target=aarch64-none-elf -c arch/aarch64/start.s -o start.o
+clang --target=aarch64-none-elf -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/mmu.c core/dtd.c core/handlers.c core/scheduler/sched.c core/scheduler/timer.c drivers/irq/gicv2.c drivers/virtio_blk/virtio_blk.c core/kmain.c
+/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld start.o kmain.o handlers.o uart.o mmu.o vectors.o dtd.o sched.o gicv2.o timer.o virtio_blk.o -o kernel.elf
+
+# exit(1)
+
+# by default qemu runs of legacy mode, so make sure you disable ti, to do that, we might ahve pass global params
+
+
+# qemu-system-aarch64 -M virt -cpu cortex-a53 -m 4G \
+#   -machine virtualization=off \
+#   -device loader,file=kernel.elf,addr=0x80000000,cpu-num=0 \
+#   -drive file=ext4fs/ext4fs.img,format=raw,if=none,id=hd0 \
+#   -device virtio-blk-device,drive=hd0 \
+#   -global virtio-mmio.force-legacy=false \
+#   -accel tcg \
+#   -monitor stdio
+
+QEMU_ARGS=(
+  -M virt -cpu cortex-a53 -m 4G
+  -machine virtualization=off
+  -nographic -serial mon:stdio
+  -device loader,file=kernel.elf,addr=0x80000000,cpu-num=0
+  # -drive file=ext4fs/ext4fs.img,format=raw,if=virtio
+  -drive file=ext4fs/ext4fs.img,format=raw,if=none,id=hd0,cache=directsync
+  -device virtio-blk-device,drive=hd0
+  -global virtio-mmio.force-legacy=false
+  # -d all
+  -d trace:*virtio_*
+  -D qemu-%d.log
+  -accel tcg
+  -S -gdb tcp::1234
+  -monitor telnet:127.0.0.1:7899,server,nowait
+)
+
+# Start QEMU in background
+qemu-system-aarch64 "${QEMU_ARGS[@]}" &
+QEMU_PID=$!
+
+echo $QEMU_PID > /tmp/test
+
+# Small wait to ensure gdbstub is listening
+sleep 0.2
+
+# Launch GDB and connect
+gdb -q kernel.elf \
+-ex "b _start" \
+  -ex "set architecture aarch64" \
+  -ex "target remote :1234" 
+
+
