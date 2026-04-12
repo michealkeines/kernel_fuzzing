@@ -8,6 +8,8 @@ void write_u32(virtio *virtio_obj, uint32_t offset, uint32_t value)
 
 uint32_t read_u32(virtio *virtio_obj,  uint32_t offset)
 {
+    virtio_mb();
+
     return *(uint32_t *)(virtio_obj->virtio_base + offset);
 }
 
@@ -148,12 +150,46 @@ void init_virtio_driver(virtio *virtio_obj, struct virtq *queue)
     // we select the upper half by write 1 into featuresel
     // and then we directly write 32-63 bits
 
-    // we are setting 33rd bit, is it enough for basic read/write block operations?
+    /*
+        now we read from the sel 0, its features and write it back the features
+
+        then we write 1 to sel, and read the features and write 1 to 33rd bit
+    
+    */
+
+    write_u32(virtio_obj, VIRTIO_DeviceFeaturesSel, 0);
+    uint32_t device_features_sel_zero = read_u32(virtio_obj, VIRTIO_DeviceFeatures);
+    uart_printf("device featues, sel: 0, %d\n", device_features_sel_zero);
+
+
+    write_u32(virtio_obj, VIRTIO_DeviceFeaturesSel, 1);
+    uint32_t device_features_sel_one = read_u32(virtio_obj, VIRTIO_DeviceFeatures);
+    uart_printf("device featues, sel: 1, %d\n", device_features_sel_one);
+
+
+
+    write_u32(virtio_obj, VIRTIO_DriverFeaturesSel, 0);
+    write_u32(virtio_obj, VIRTIO_DriverFeatures, device_features_sel_zero);
+
+    // we are updating the 32nd bit, which is the 33rd if we start from 1
     write_u32(virtio_obj, VIRTIO_DriverFeaturesSel, 1);
-    write_u32(virtio_obj, VIRTIO_DriverFeatures, 1 << 1);
+
+    // if we want ot accept everything ,we write back we is there + 32 bit
+    // write_u32(virtio_obj, VIRTIO_DriverFeatures, (device_features_sel_one | (0x1<<0)));
+    // if we only only need the read/write, then just 32
+    write_u32(virtio_obj, VIRTIO_DriverFeatures, (0x1<<0));
 
 
-    update_status(virtio_obj, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK); 
+    write_u32(virtio_obj, VIRTIO_DeviceFeaturesSel, 0);
+    device_features_sel_zero = read_u32(virtio_obj, VIRTIO_DeviceFeatures);
+    uart_printf("device featues after, sel: 0, %d\n", device_features_sel_zero);
+
+
+    write_u32(virtio_obj, VIRTIO_DeviceFeaturesSel, 1);
+    device_features_sel_one = read_u32(virtio_obj, VIRTIO_DeviceFeatures);
+    uart_printf("device featues after , sel: 1, %d\n", device_features_sel_one);
+
+
 
     uart_printf("current status %d\n", read_u32(virtio_obj, VIRTIO_STATUS));
     // do we have to re-read the feature bit here?
@@ -163,11 +199,10 @@ void init_virtio_driver(virtio *virtio_obj, struct virtq *queue)
     // prepare a request to write to block 100
     // prepare all descriptor table value
 
-
-
-    update_status(virtio_obj, VIRTIO_STATUS_ACK | VIRTIO_STATUS_DRIVER | VIRTIO_STATUS_FEATURES_OK | VIRTIO_STATUS_DRIVER_OK ); 
+    update_status(virtio_obj, read_u32(virtio_obj, VIRTIO_STATUS) | VIRTIO_STATUS_FEATURES_OK ); 
     uart_printf("current status %d\n", read_u32(virtio_obj, VIRTIO_STATUS));
 
 
     init_queue(virtio_obj, queue);
+    update_status(virtio_obj, read_u32(virtio_obj, VIRTIO_STATUS) | VIRTIO_STATUS_DRIVER_OK ); 
 }
