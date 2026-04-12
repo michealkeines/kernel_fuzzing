@@ -145,14 +145,21 @@ static inline void virtio_mb(void)
 	__asm__ volatile ("dmb sy"::: "memory");
 }
 
+/*
+why not just have on big request, why chaing and parse stuff
 
+because it give us the option to set permissions, we can set, header part as read only and next part as readolu amd the data part can be set as write, which is valid and give ACL
+
+
+the virotio 1.1 spec says that we need toput data adn status in tstruct but inrelaity we dont need it, it casues size errors
+*/
 
 struct __attribute__((packed)) virtio_blk_req { 
     uint32_t type; 
     uint32_t reserved; 
     uint64_t sector; 
-    uint8_t data[0][512]; 
-    uint8_t status; 
+    // uint8_t data[0][512]; 
+    // uint8_t status; 
 };
 
 struct __attribute__((packed)) virtq_dec {

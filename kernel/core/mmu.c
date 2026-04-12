@@ -451,12 +451,20 @@ we are already have l1 table used in mmu_init, we reuse that untill we use 1GP, 
 
 */
 
-uint64_t kmalloc(AllocateMem *mem, uint64_t size)
+AllocateMem GlobalBitMapArray = {0}; // this should in .Data segment
+
+void init_bitmap(void *bitmap)
+{
+    GlobalBitMapArray.buffer = (uint8_t *)bitmap;
+	uart_printf("allocating mem: %l\n", bitmap);
+}
+
+uint64_t kmalloc(uint64_t size)
 {
     BitIndex res[64];
     uart_printf("res: %l\n", res);
 
-    uint64_t total_allocated = allocate_mem(mem, size, res);
+    uint64_t total_allocated = allocate_mem(&GlobalBitMapArray, size, res);
     uart_printf("total allocated: %l\n", total_allocated);
     BitIndex current = res[0];
     uint64_t index = current.index;

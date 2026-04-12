@@ -25,4 +25,7 @@ typedef struct bit_index
 	bool valid;
 } BitIndex; 
 
+uint64_t kmalloc(uint64_t size);
+
+void init_bitmap(void *bitmap);
 #endif // __MMU__

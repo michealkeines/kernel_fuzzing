@@ -4,8 +4,6 @@
 #include "mmu.h"
 
 extern void uart_printf(const char* fmt, ...);
-extern uint64_t kmalloc(AllocateMem *mem, uint64_t size);
-extern AllocateMem GlobalBitMapArray;
 extern void set_cntv(void); 
 extern unsigned int gic_ack(void);
 extern void gic_eoi(unsigned int irq);
@@ -26,7 +24,7 @@ uint64_t syscall_dispatcher(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_
     switch (syscall_number)
     {
     case 5:
-        result = kmalloc(&GlobalBitMapArray, arg1); // TODO: KERNEL to userspace mapping here
+        result = kmalloc(arg1); // TODO: KERNEL to userspace mapping here
         break;
     
     default:

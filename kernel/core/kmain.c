@@ -11,13 +11,11 @@ extern void uart_printf(const char* fmt, ...);
 extern void *mem_block(uint64_t size);
 extern void timer_init_1khz(void);
 extern void gic_init(void);
-extern uint64_t kmalloc(AllocateMem *mem, uint64_t size);
 extern void map_user_to_physical(uint64_t id, uint64_t address);
 	extern void add_virtio_page(uint64_t reg);
 extern void map_user_to_physical_test(uint64_t id, uint64_t address);
 
 
-AllocateMem GlobalBitMapArray = {0}; // this should in .Data segment
 
 #define STACK_SZ 4096
 
@@ -61,12 +59,12 @@ we need table for this address to the physcial
 
 Task *init_task(int id, const char *name, void (*entry)(void), uint64_t sz)
 {
-	Task *task = (Task *)kmalloc(&GlobalBitMapArray, sizeof(Task));
+	Task *task = (Task *)kmalloc(sizeof(Task));
 	uart_printf("Task: %l\n", task);
 	
-	uint8_t *kstack = (uint8_t *)kmalloc(&GlobalBitMapArray, sz);
+	uint8_t *kstack = (uint8_t *)kmalloc(sz);
 	uart_printf("kstack: %l\n", kstack);
-	uint64_t ustack_t = kmalloc(&GlobalBitMapArray, sz);
+	uint64_t ustack_t = kmalloc(sz);
 	uint8_t *ustack = (uint8_t *)kernal_to_user_space(ustack_t);
 	// i am inside el1, i have current table that has identy mapping or table for 0xffff0000Csomething -> 0x000000000Csomthing
 	// my kmalloc gives me 0xfffff0000Csomething as address
@@ -179,12 +177,10 @@ void kmain(uint64_t total_ram)
 
     // total_ram = 4294967296;
     uint8_t *bitmap = init_allocation_map(total_ram);
+	init_bitmap(bitmap);
 
-
-	GlobalBitMapArray.buffer = bitmap;
 	uint64_t si = 16000;
-	uart_printf("allocating mem: %l\n", bitmap);
-	uint64_t test = kmalloc(&GlobalBitMapArray, si);
+	uint64_t test = kmalloc( si);
 	uart_printf("pointer: %l\n", test);
 	// ((char*)(0xffff000001f40000))[0] = 'a';
 	// uart_printf("name1: %d, %c\n", test, ((char*)(0xffff000001f40000))[0]);
@@ -200,7 +196,7 @@ void kmain(uint64_t total_ram)
 	uart_printf("name2: %l, %d\n", test, ((char*)test)[13000]);
 	uart_printf("name: %s\n", ((char*)test));
 
-	uint64_t *drive_info = (uint64_t *)kmalloc(&GlobalBitMapArray, sizeof(uint64_t) * 6);
+	uint64_t *drive_info = (uint64_t *)kmalloc( sizeof(uint64_t) * 6);
 	get_drive_info(drive_info);
 	for (int i = 0; i < 5; ++i) {
 		uart_printf("result: %l\n", drive_info[i]);
@@ -209,18 +205,18 @@ void kmain(uint64_t total_ram)
 #define VIRTIO_REG_RANGE 0xffff000086400000UL
 
 
-	virtio *virtio_obj = (virtio *)kmalloc(&GlobalBitMapArray, sizeof(virtio)); // address is hard code to this virtio reg
+	virtio *virtio_obj = (virtio *)kmalloc( sizeof(virtio)); // address is hard code to this virtio reg
 
 	// I think my pages are already 4k, even if i try to allocate something less, it would still alocate the full 4k, Maybe come back here if something goes wrong
 
 
 
 
-	struct virtq_dec *virtq_desc_obj = (struct virtq_dec *)kmalloc(&GlobalBitMapArray, sizeof(struct virtq_dec) * 12);
+	struct virtq_dec *virtq_desc_obj = (struct virtq_dec *)kmalloc( sizeof(struct virtq_dec) * 12);
        
-	struct virtq_avail *virtq_avail_obj = (struct virtq_avail *)kmalloc(&GlobalBitMapArray, sizeof(struct virtq_avail) * 12);
+	struct virtq_avail *virtq_avail_obj = (struct virtq_avail *)kmalloc( sizeof(struct virtq_avail) * 12);
 
-	struct virtq_used *virtq_used_obj = (struct virtq_used *)kmalloc(&GlobalBitMapArray, sizeof(struct virtq_used) * 12);
+	struct virtq_used *virtq_used_obj = (struct virtq_used *)kmalloc( sizeof(struct virtq_used) * 12);
 
 	// this is phycial address that we took from the parsed dtd
 
@@ -265,7 +261,7 @@ void kmain(uint64_t total_ram)
 	virtio_obj->physical_virtq_avail = convert_to_physical((uint64_t)virtq_avail_obj);
 	virtio_obj->physical_virtq_used = convert_to_physical((uint64_t)virtq_used_obj);
 	
-	struct virtq *queue = (struct virtq *)kmalloc(&GlobalBitMapArray, sizeof(struct virtq));
+	struct virtq *queue = (struct virtq *)kmalloc( sizeof(struct virtq));
 
 
 	// we have the reg location mapped
@@ -281,27 +277,33 @@ void kmain(uint64_t total_ram)
 
 	// figure out why this layout is not working, looks like we are not writting the poper flags
 
-	char *data = (char *)kmalloc(&GlobalBitMapArray, sizeof(512));
+
+	// TODO:
+
+	// - test with read examples, read/write works now
+	// - group both read/write into high level api
+	// - try batch request
+	char *data = (char *)kmalloc( sizeof(512));
 	i = 0;
 
-	for (i = 0; i < 512; i++) {
-		data[i] = 'K';
-	}
-	i = 11;
-	data[i++] = 'Y';
-	data[i++] = '#';
-	data[i++] = 'J';
-	data[i++] = '#';
-	data[i++] = '3';
-	data[i++] = 'E';
+	// for (i = 0; i < 512; i++) {
+	// 	data[i] = 'K';
+	// }
+	// i = 11;
+	// data[i++] = 'Y';
+	// data[i++] = '#';
+	// data[i++] = 'J';
+	// data[i++] = '#';
+	// data[i++] = '3';
+	// data[i++] = 'E';
 
 	i = 0;
 
 	uart_printf("1\n");
 
-	struct virtio_blk_req *req = (struct virtio_blk_req *)kmalloc(&GlobalBitMapArray, sizeof(struct virtio_blk_req));
+	struct virtio_blk_req *req = (struct virtio_blk_req *)kmalloc( sizeof(struct virtio_blk_req));
 
-	req->type = VIRTIO_BLK_T_OUT;
+	req->type = VIRTIO_BLK_T_IN;
 	req->sector = 1000;
 	req->reserved = 0;
 
@@ -315,7 +317,7 @@ void kmain(uint64_t total_ram)
 	struct virtq_dec* desc2 = (struct virtq_dec *)(virtio_obj->virtual_virtq_desc + (sizeof(struct virtq_dec) * i++));
 	struct virtq_dec* desc3 = (struct virtq_dec *)(virtio_obj->virtual_virtq_desc + (sizeof(struct virtq_dec) * i++));
 
-	uint8_t *status = (uint8_t *)kmalloc(&GlobalBitMapArray, sizeof(uint8_t));
+	uint8_t *status = (uint8_t *)kmalloc( sizeof(uint8_t));
 	uart_printf("3\n");
 
 	desc1->addr = kernal_to_user_space((uint64_t)req);
@@ -325,7 +327,7 @@ void kmain(uint64_t total_ram)
 
 	desc2->addr = kernal_to_user_space((uint64_t)data);
 	desc2->len = 512;
-	desc2->flags = VIRTIO_DESC_F_NEXT;
+	desc2->flags = VIRTIO_DESC_F_NEXT | VIRTIO_DESC_F_WRITE;
 	desc2->next = 2;
 
 	desc3->addr = kernal_to_user_space((uint64_t)status);
