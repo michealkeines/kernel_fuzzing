@@ -53,6 +53,16 @@ static inline uint64_t make_table_desc(uint64_t next_table_phys_base) {
     return desc;
 }
 
+uint64_t convert_to_physical(uint64_t add)
+{
+	return (0x0000ffffffffffff & add);
+}
+
+uint64_t kernal_to_user_space(uint64_t virtual_kernel_address)
+{
+	return (virtual_kernel_address & 0x0000FFFFFFFFFFFF);
+}
+
 #define PXN_BIT (1ULL << 52)
 #define UXN_BIT (1ULL << 53) // shift is not gonna do anything, we keep to show the bit index
 #define UXN_BIT1 (1ULL << 54) // shift is not gonna do anything, we keep to show the bit index

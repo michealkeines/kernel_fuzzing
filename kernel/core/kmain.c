@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "mmu.h"
+
+#include "../drivers/block/block_driver.h"
 #include "scheduler/context.h"
 #include "scheduler/sched.h"
 #include "../drivers/virtio_blk/virtio_blk.h"
@@ -12,7 +14,6 @@ extern void *mem_block(uint64_t size);
 extern void timer_init_1khz(void);
 extern void gic_init(void);
 extern void map_user_to_physical(uint64_t id, uint64_t address);
-	extern void add_virtio_page(uint64_t reg);
 extern void map_user_to_physical_test(uint64_t id, uint64_t address);
 
 
@@ -34,10 +35,7 @@ void user_process2(void)
 	while (1) {volatile int i = 1;};
 }
 
-static inline uint64_t kernal_to_user_space(uint64_t virtual_kernel_address)
-{
-	return (virtual_kernel_address & 0x0000FFFFFFFFFFFF);
-}
+
 
 
 
@@ -150,10 +148,7 @@ int32_t testme(void)
 	return 1 + 1;
 }
 
-static inline uint64_t convert_to_physical(uint64_t add)
-{
-	return (0x0000ffffffffffff & add);
-}
+
 
 
 
@@ -202,73 +197,6 @@ void kmain(uint64_t total_ram)
 		uart_printf("result: %l\n", drive_info[i]);
 	}
 
-#define VIRTIO_REG_RANGE 0xffff000086400000UL
-
-
-	virtio *virtio_obj = (virtio *)kmalloc( sizeof(virtio)); // address is hard code to this virtio reg
-
-	// I think my pages are already 4k, even if i try to allocate something less, it would still alocate the full 4k, Maybe come back here if something goes wrong
-
-
-
-
-	struct virtq_dec *virtq_desc_obj = (struct virtq_dec *)kmalloc( sizeof(struct virtq_dec) * 12);
-       
-	struct virtq_avail *virtq_avail_obj = (struct virtq_avail *)kmalloc( sizeof(struct virtq_avail) * 12);
-
-	struct virtq_used *virtq_used_obj = (struct virtq_used *)kmalloc( sizeof(struct virtq_used) * 12);
-
-	// this is phycial address that we took from the parsed dtd
-
-	// TODO:
-	// qemu mimo will always have this address range mapped, but the backend will not bave anything that is why we need to chekcc if the device-id is there not
-	// we just have the mimo starting address, we have to look into all device from this address with 0x200 as the offset and check if the device-id is not 0 and register all of them
-	add_virtio_page(drive_info[0]);
-
-
-	uint32_t i = 0;
-
-	uint64_t device_reg = 0;
-
-
-	// we are only reading upto 32 devices?
-	for (i =0; i <= 31; i++)
-	{
-		virtio temp = {
-			.virtio_base = VIRTIO_REG_RANGE + (i * 0x200)
-		};
-	 	if (check_virtio_driver(&temp) == 1)
-		{
-			device_reg = VIRTIO_REG_RANGE + (i * 0x200);
-			break;
-		}
-	}
-
-
-	if (device_reg == 0)
-	{
-		uart_printf("no device found\n");
-		return;
-	}
-
-	uart_printf("Device found at Index: %d\n", i);
-	virtio_obj->virtio_base = device_reg;
-	
-	virtio_obj->virtual_virtq_desc = (uint64_t)virtq_desc_obj;
-	virtio_obj->virtual_virtq_avail =(uint64_t) virtq_avail_obj;
-	virtio_obj->virtual_virtq_used = (uint64_t)virtq_used_obj;
-	virtio_obj->physical_virtq_desc = convert_to_physical((uint64_t)virtq_desc_obj);
-	virtio_obj->physical_virtq_avail = convert_to_physical((uint64_t)virtq_avail_obj);
-	virtio_obj->physical_virtq_used = convert_to_physical((uint64_t)virtq_used_obj);
-	
-	struct virtq *queue = (struct virtq *)kmalloc( sizeof(struct virtq));
-
-
-	// we have the reg location mapped
-	init_virtio_driver(virtio_obj, queue);
-
-	uart_printf("init done for virtio driver\n");
-
 
 	// TODO:
 	// - prepare the request to write into sector 100
@@ -278,95 +206,55 @@ void kmain(uint64_t total_ram)
 	// figure out why this layout is not working, looks like we are not writting the poper flags
 
 
+	// we initaize the entire virtio register and backend address
+	init_virtio_backend(drive_info[0]);
+
 	// TODO:
 
 	// - test with read examples, read/write works now
 	// - group both read/write into high level api
-	// - try batch request
+	// - try batch request - multiple requests are working now
 	char *data = (char *)kmalloc( sizeof(512));
-	i = 0;
 
-	// for (i = 0; i < 512; i++) {
-	// 	data[i] = 'K';
-	// }
-	// i = 11;
-	// data[i++] = 'Y';
-	// data[i++] = '#';
-	// data[i++] = 'J';
-	// data[i++] = '#';
-	// data[i++] = '3';
-	// data[i++] = 'E';
+	data[1] = 'H';
+	data[2] = 'H';
+	data[3] = 'H';
+	data[4] = 'H';
+	data[5] = 'H';
+	data[6] = 'H';
+	int i =0;
+	uint64_t read = block_write(1000, data, 512);
+	read = block_read(1000, data, 512);
+	/*
+	TODO:
 
-	i = 0;
+	currently we can only make two request, first write and then a read, as all teh index within avail and used block are static, 1,2,3 and the 4,5,6 with index as 0 and 1
 
-	uart_printf("1\n");
 
-	struct virtio_blk_req *req = (struct virtio_blk_req *)kmalloc( sizeof(struct virtio_blk_req));
+	make this process dynamic so we can read and writte wihtout having to udpate index, it should be done automattically
 
-	req->type = VIRTIO_BLK_T_IN;
-	req->sector = 1000;
-	req->reserved = 0;
 
-	virtio_mb();
 
-	uart_printf("2\n");
+	this is done
 
-	i = 0;
 
-	struct virtq_dec* desc1 = (struct virtq_dec *)(virtio_obj->virtual_virtq_desc + (sizeof(struct virtq_dec) * i++));
-	struct virtq_dec* desc2 = (struct virtq_dec *)(virtio_obj->virtual_virtq_desc + (sizeof(struct virtq_dec) * i++));
-	struct virtq_dec* desc3 = (struct virtq_dec *)(virtio_obj->virtual_virtq_desc + (sizeof(struct virtq_dec) * i++));
+	after a request is done, we need to set that index as freed? do this first - Tested but not in parallel case, for future
 
-	uint8_t *status = (uint8_t *)kmalloc( sizeof(uint8_t));
-	uart_printf("3\n");
+	now lets think about writing one mutex kinda data strucuture, so the high operations can be synced ebtween two processses as they all gonna be raccing eventruallly
 
-	desc1->addr = kernal_to_user_space((uint64_t)req);
-	desc1->len = sizeof(struct virtio_blk_req);
-	desc1->flags = VIRTIO_DESC_F_NEXT;
-	desc1->next = 1;
 
-	desc2->addr = kernal_to_user_space((uint64_t)data);
-	desc2->len = 512;
-	desc2->flags = VIRTIO_DESC_F_NEXT | VIRTIO_DESC_F_WRITE;
-	desc2->next = 2;
+	do this, ebfore we get into the VFS implementaion
 
-	desc3->addr = kernal_to_user_space((uint64_t)status);
-	desc3->len = 1;
-	desc3->flags =  VIRTIO_DESC_F_WRITE;
-	// desc3->next = 0;
+	we need to test parallel use of block read/write from user space, currentluy we only tested is sequentially
 
-	uart_printf("4\n");
 
-	virtio_mb();
+	*/
 
-	// we have to update the ring array with the index of the descriptor chain and then increment idx field, this way multiple chains can be batches together
-	// virtq_avail_obj->idx = 0;
-	virtq_avail_obj->flags = 1;
-	virtio_mb();
-	virtq_avail_obj->ring[0] = 0;
-	virtio_mb();
-	virtq_avail_obj->idx = 1;
-	uart_printf("5\n");
-	uint32_t last_seen_idx = virtq_used_obj->idx;
-	virtio_mb();
-	write_u32(virtio_obj, VIRTIO_QueueNotify, 0);
 
-	virtio_mb();
-
-	uart_printf("6\n");
-	uart_printf("\nstatus bit1: %d\n", *status);
-	i = 0;
-	virtio_mb();
-	while (virtq_used_obj->idx == last_seen_idx) virtio_mb();
-	uart_printf("new index: %d\n", virtq_used_obj->idx);
-	uart_printf("used rring 0: %d\n", virtq_used_obj->ring[0].len);
-	uart_printf("\nstatus bit2: %d\n", *status);
 	for (i = 0; i < 512; i++) {
 
 	uart_printf("%d", data[i]);
 	}
-
-
 	// what do we need here?
 
 	// we have written three descriptors, they are chained together

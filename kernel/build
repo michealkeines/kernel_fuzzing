@@ -4,8 +4,8 @@ echo "cleaned"
 clang --target=aarch64-none-elf -c arch/aarch64/vectors.s -o vectors.o
 
 clang --target=aarch64-none-elf -c arch/aarch64/start.s -o start.o
-clang --target=aarch64-none-elf -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/mmu.c core/dtd.c core/handlers.c core/scheduler/sched.c core/scheduler/timer.c drivers/irq/gicv2.c drivers/virtio_blk/virtio_blk.c core/kmain.c
-/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld start.o kmain.o handlers.o uart.o mmu.o vectors.o dtd.o sched.o gicv2.o timer.o virtio_blk.o -o kernel.elf
+clang --target=aarch64-none-elf -ffreestanding -nostdlib -mgeneral-regs-only -c drivers/char/uart.c core/mmu.c core/dtd.c core/handlers.c core/scheduler/sched.c core/scheduler/timer.c drivers/irq/gicv2.c drivers/virtio_blk/virtio_blk.c drivers/block/block_driver.c core/kmain.c
+/opt/homebrew/opt/llvm@16/bin/ld.lld -T linker.ld start.o kmain.o handlers.o uart.o mmu.o vectors.o dtd.o sched.o gicv2.o timer.o block_driver.o virtio_blk.o -o kernel.elf
 
 # exit(1)
 

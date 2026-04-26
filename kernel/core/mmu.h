@@ -26,6 +26,11 @@ typedef struct bit_index
 } BitIndex; 
 
 uint64_t kmalloc(uint64_t size);
+void add_virtio_page(uint64_t reg);
 
 void init_bitmap(void *bitmap);
+
+uint64_t convert_to_physical(uint64_t add);
+
+uint64_t kernal_to_user_space(uint64_t virtual_kernel_address);
 #endif // __MMU__
