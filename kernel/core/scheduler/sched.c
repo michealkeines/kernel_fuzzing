@@ -35,14 +35,14 @@ static inline void rq_push(Task *t)
     
     if (!rq_tail) {
         rq_head = rq_tail = t;
-        uart_puts("\npush to head/tail--");
-        uart_puts(t->name);
-        uart_puts("--push to head/tail\n");
+        // uart_puts("\npush to head/tail--");
+        // uart_puts(t->name);
+        // uart_puts("--push to head/tail\n");
     } 
     else {
-        uart_puts("\npush to tail--");
-        uart_puts(t->name);
-        uart_puts("--push to tail\n");
+        // uart_puts("\npush to tail--");
+        // uart_puts(t->name);
+        // uart_puts("--push to tail\n");
         rq_tail->next = t;
         rq_tail = t;
     }
@@ -91,9 +91,9 @@ static inline Task *rq_pop(void)
     if (!t) {return 0;}
     rq_head = t->next;
     if (rq_head) {
-        uart_puts("\nPNEXT--");
-        uart_puts(rq_head->name);
-        uart_puts("--NEXT\n");
+        // uart_puts("\nPNEXT--");
+        // uart_puts(rq_head->name);
+        // uart_puts("--NEXT\n");
     }
     if (!rq_head) rq_tail = 0;
     t->next = 0;
@@ -112,9 +112,9 @@ void sched_ready_enqueue(Task *t)
 {
     t->state = READY;
     t->slice_left = RR_SLICE_TICKS;
-    uart_puts("\nsched_ready_enqueue--");
-        uart_puts(t->name);
-        uart_puts("--sched_ready_enqueue\n");
+    // uart_puts("\nsched_ready_enqueue--");
+        // uart_puts(t->name);
+        // uart_puts("--sched_ready_enqueue\n");
     rq_push(t);
 }
 
@@ -146,13 +146,13 @@ Context *schedule_on_tick(Context *tf)
             // gic_eoi(iar);
             return current->context;
         }
-        uart_puts("Done one Tick after, we are in EL1\n");
+        // uart_puts("Done one Tick after, we are in EL1\n");
         // no time left, we push it to back if the ready queue
         current->slice_left = RR_SLICE_TICKS;
         current->state = READY;
-        uart_puts("\ncurrent-tick-done--");
-        uart_puts(current->name);
-        uart_puts("--current-tick-done\n");
+        // uart_puts("\ncurrent-tick-done--");
+        // uart_puts(current->name);
+        // uart_puts("--current-tick-done\n");
         rq_push(current);
 
     }
@@ -182,10 +182,10 @@ Context *schedule_on_tick(Context *tf)
 
     next->state = RUNNING;
     current = next;
-    uart_puts("Done one Tick, we are in EL1\n");
-    uart_puts("\nset-running--");
-    uart_puts(current->name);
-    uart_puts("--set-running\n");
+    // uart_puts("Done one Tick, we are in EL1\n");
+    // uart_puts("\nset-running--");
+    // uart_puts(current->name);
+    // uart_puts("--set-running\n");
     set_cntv();
     // gic_eoi(iar);
     return current->context;

@@ -139,7 +139,7 @@ el0_sync_entry:
     lsr x11, x10, #26
     cmp x11, #0x15
     b.ne not_syscall
-    bic x8, x8, #0x000000000000ffff // take the lower 15:0 bit into x0
+    // bic x8, x8, #0x000000000000ffff // take the lower 15:0 bit into x0
     mov x7, x8 // syscall number
     bl syscall_dispatcher
     eret
@@ -149,7 +149,7 @@ not_syscall:
 
 default_entry: eret
 // irq_dispatcher: eret
-syscall_dispatcher: eret 
+//syscall_dispatcher: eret 
 first_user_enter:
     mov sp, x0;
     RESTORE_AND_ERET

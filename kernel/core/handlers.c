@@ -2,7 +2,7 @@
 #include "scheduler/sched.h"
 #include "stdarg.h"
 #include "mmu.h"
-
+#include "../drivers/block/block_driver.h"
 extern void uart_printf(const char* fmt, ...);
 extern void set_cntv(void); 
 extern unsigned int gic_ack(void);
@@ -26,7 +26,22 @@ uint64_t syscall_dispatcher(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_
     case 5:
         result = kmalloc(arg1); // TODO: KERNEL to userspace mapping here
         break;
+    case 64:
+        uart_printf("Syscall write is caled\n");
+        // because the overall size is increaing everytim i add some ccode, i have to maek the vector table address not hard coded anymore this is cause the touble , fix this first
+        // here as soon as we call the kmalloc and one the l3 table locaiton is getting page fault
+        // we fixed the label of vector table
+        // now as sonn as i enter into el1 from el0, the address of tables are not accessible, eg: 0x80070000, which is the L2 table, i breakout at the el0_sync_entry handler, so this is right after we jump into el1 from el0, nothing else has been touched yet
+        uint64_t read = block_write(1000, (char *)arg2, arg3);
+        // uint64_t read = 0;
+        uart_printf("Syscall write is done %l\n", read);
+        // char data[512];
+        // read = block_read(1000, data, 512);
+        // for (int i = 0; i < 512; i++) {
     
+        // uart_printf("%d", data[i]);
+        // }
+        break;
     default:
         break;
     }
@@ -65,7 +80,7 @@ Context *irq_dispatcher(Context *context)
             timer_irq_handler();
 
             uint64_t el = check_current_el();
-            uart_printf("Timer IRQ handler fired for return address %l , EL: %l\n", context->elr_el1, el);
+            // uart_printf("Timer IRQ handler fired for return address %l , EL: %l\n", context->elr_el1, el);
             /*
             currently we are assuming if something comes from EL1, we dont have run schedule on tick
 

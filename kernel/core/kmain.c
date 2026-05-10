@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "mmu.h"
+#include "syscall.h"
 
 #include "../drivers/block/block_driver.h"
 #include "scheduler/context.h"
@@ -20,19 +21,60 @@ extern void map_user_to_physical_test(uint64_t id, uint64_t address);
 
 #define STACK_SZ 4096
 
+int64_t sys_write(uint64_t fd, char *buff, uint64_t size)
+{
+    int64_t result;
+    asm volatile (
+        "mov x8, #64 \t\n"
+        "svc #0"
+        : "=r" (result)
+        : "r" (fd), "r" (buff), "r" (size)
+        : "x8", "memory"
+    );
+    return result;
+}
+
 /*
 TODO: 
 	how can we map this function it the user virtual space and update all of it page tables
 */
 void user_process1(void)
 {
+
+	/*
+	
+	TODO:
+
+	- currenltly sys_write is not mapped in the user table,
+	 we have to map that and try again, currenlut we just get table fault when we jump into the sys_write
+	- but we have implemented sys_write, and called here
+	*/
 	// uart_printf("Task 1 is running\n");
+	char test[5];
+	int i = 0;
+	test[i++] = 'W';
+	test[i++] = 'W';
+	test[i++] = 'W';
+	test[i++] = 'W';
+	test[i++] = 'W';
+	int64_t result = sys_write(1, test, 512);
+
+	// uart_printf("result of write: %l\n", result);
+
+	
 	while (1) {volatile int i = 1;};
 }
 
 void user_process2(void)
 {
-	while (1) {volatile int i = 1;};
+	// uart_printf("Task 2 is running\n");
+
+	while (1) {
+		
+		
+	uart_printf("Task 2 is running\n");
+
+		volatile int i = 1;};
 }
 
 
@@ -57,6 +99,17 @@ we need table for this address to the physcial
 
 Task *init_task(int id, const char *name, void (*entry)(void), uint64_t sz)
 {
+
+	// a helper that can map any lib into the task
+	// and we want ot make sure all the refernces are linked
+	// eg: if we use sys_write and if loadinto VA lets 0x800005000, but the instruction would have 0x0000000080001f38
+	// page table entry within userspace VA
+	// from  0x80001f38 (UVA) => 0x80001f38 (PA)
+	// we have table
+	// sys_write: 0x8000001, physical: 0x80001f38
+	// 0x8000001 => 0x80001f38
+	map_user_to_physical(id, (uint64_t)sys_write);
+
 	Task *task = (Task *)kmalloc(sizeof(Task));
 	uart_printf("Task: %l\n", task);
 	
@@ -216,12 +269,12 @@ void kmain(uint64_t total_ram)
 	// - try batch request - multiple requests are working now
 	char *data = (char *)kmalloc( sizeof(512));
 
-	data[1] = 'H';
-	data[2] = 'H';
-	data[3] = 'H';
-	data[4] = 'H';
-	data[5] = 'H';
-	data[6] = 'H';
+	data[1] = 'Y';
+	data[2] = 'Y';
+	data[3] = 'Y';
+	data[4] = 'Y';
+	data[5] = 'Y';
+	data[6] = 'Y';
 	int i =0;
 	uint64_t read = block_write(1000, data, 512);
 	read = block_read(1000, data, 512);
@@ -243,9 +296,17 @@ void kmain(uint64_t total_ram)
 	now lets think about writing one mutex kinda data strucuture, so the high operations can be synced ebtween two processses as they all gonna be raccing eventruallly
 
 
+	todo:
+
+	- iplement spinlock with the asm ldxr/stxr
+	- add some test with mutlipel users tryint to read block
+
+
 	do this, ebfore we get into the VFS implementaion
 
 	we need to test parallel use of block read/write from user space, currentluy we only tested is sequentially
+
+
 
 
 	*/
@@ -265,8 +326,9 @@ void kmain(uint64_t total_ram)
 
 	// maybe we need to think about the mode, because the specification says that we should only have read-only or write-only permsiions, and i dont have that
 
+	__asm__ volatile("msr daifset, #0xf");
 
-	while (1){}
+	// while (1){}
 	
 	// /* 
 	// TODO:

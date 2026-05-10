@@ -517,6 +517,8 @@ BUG:
 
 bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total) 
 {
+    uart_printf("VA => PA, %l => %l, with total: %l\n", va, pa, total);
+
     if (total > 20)
     {
         uart_printf("you odnt have that much ram");
@@ -576,7 +578,7 @@ bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total)
         uint64_t l2_desc = make_table_desc(l3_table_address);
 	    uart_printf("index: %l, VA: %l, L2 index: %l => %l, L3 table: %l\n", i, current_va, l2_idx, pa, l3_table_address);
         set_table_entry((uint64_t*)current_l2, l2_idx, l2_desc);
-
+        // uart_printf("updated table entry for l3\n");
 
         /* 
 

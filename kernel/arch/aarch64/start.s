@@ -38,10 +38,13 @@ _start:
 
     mov x13, x0 // we are writing to x13, so make sure, in future if we chanages, x13 is not written
 
-    bl mmu_init
+    bl mmu_init // we have enabled the mmu here
 
-    // ldr x0, =vectors // 0x8000xxxx to 0xffff00008000xxxx
-    ldr x0, =0xffff000080002000
+    // here we are just convert the phyical address into virtual address by added ffff in the upper bits
+    ldr x0, =vectors // 0x8000xxxx to 0xffff00008000xxxx
+    ldr x1, =0xffff000000000000
+    ORR x0, x0, x1
+    
     msr VBAR_EL1, x0
 
     ldr x0, =0xFFFF000080000000

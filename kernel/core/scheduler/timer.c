@@ -44,9 +44,9 @@ static inline void read_cntfrq(void)
 void set_cntv(void)
 {
     read_cntfrq();
-    uart_printf("read back: %l\n", cntfrq);
+    // uart_printf("read back: %l\n", cntfrq);
     uint64_t our_freq = cntfrq / 10; // we want the interrupt every 1ms
-    uart_printf("setting back: %l\n", our_freq);
+    // uart_printf("setting back: %l\n", our_freq);
     msr_cntv_tval(our_freq);
 }
 

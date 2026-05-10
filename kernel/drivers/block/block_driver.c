@@ -1,6 +1,7 @@
 
 #include "../../core/mmu.h"
 #include "block_driver.h"
+#include "../../core/spinlock.h"
 #include "../virtio_blk/virtio_blk.h"
 
 #define BLOCK_READ "[block_read]"
@@ -8,6 +9,8 @@
 static uint64_t GLOBAL_VIRTIO_ADDRESS[4] = {0};
 
 static BlockData *GlobalBlockData = 0;
+
+static SpinLock *GlobalBlockLock = 0;
 /*
 
 currenlty our virtq desc is up to 12 in size
@@ -23,6 +26,8 @@ in parallel we can only support 4 requests at time
 
 - we might need some data structure ot implement syncing
 */
+
+// TODO: optimize the memory barrier call, do we need that after every line of code? look paranoid
 
 void init_virtio_backend(uint64_t drive_info_register)
 {
@@ -40,6 +45,9 @@ void init_virtio_backend(uint64_t drive_info_register)
         GlobalBlockData->used_request_index[i] = 0;
     }
 
+	GlobalBlockLock = (SpinLock *)kmalloc(sizeof(SpinLock));
+	// nobody elese should alive at this point, it is safe to update htis without having to have a lock
+	GlobalBlockLock->lock = 0;
 	virtio *virtio_obj = (virtio *)kmalloc( sizeof(virtio)); // address is hard code to this virtio reg
 
     GLOBAL_VIRTIO_ADDRESS[0] = (uint64_t)virtio_obj;
@@ -110,6 +118,8 @@ void init_virtio_backend(uint64_t drive_info_register)
 
 int64_t find_free_index(void)
 {
+
+	int64_t result = -1;
     for (int64_t i = 0; i < 12; i++)
     {
        if(GlobalBlockData->used_request_index[i] == 0)
@@ -118,11 +128,13 @@ int64_t find_free_index(void)
             // TODO: we need a mutex or something here, before we increment this, as someone else case also do it
             GlobalBlockData->global_count += 1;
             GlobalBlockData->used_request_index[i] = 1;
-            return i * 3;
+            result = i * 3;
+			goto exit_free_index;
        }
     }
 
-    return -1;
+exit_free_index:
+    return result;
 }
 
 uint64_t block_read(uint32_t sector, char *data, uint64_t size)
@@ -143,9 +155,11 @@ uint64_t block_read(uint32_t sector, char *data, uint64_t size)
 
 	uart_printf(BLOCK_READ ": Prepared Request.");
 
+	spin_lock_with_mask(GlobalBlockLock); // lock to get free index + use index + udpate register
     int64_t free_index = -1;
     while (free_index == -1)
     {
+		
         free_index = find_free_index();
     }
 	uint32_t i = (uint32_t)free_index;
@@ -163,7 +177,7 @@ uint64_t block_read(uint32_t sector, char *data, uint64_t size)
 	desc1->next = (uint16_t)free_index + 1;
 
 	desc2->addr = kernal_to_user_space((uint64_t)data);
-	desc2->len = 512;
+	desc2->len = size;
 	desc2->flags = VIRTIO_DESC_F_NEXT | VIRTIO_DESC_F_WRITE;
 	desc2->next = (uint16_t)free_index + 2;
 
@@ -188,6 +202,7 @@ uint64_t block_read(uint32_t sector, char *data, uint64_t size)
 	virtio_mb();
 	write_u32(virtio_obj, VIRTIO_QueueNotify, 0);
 
+	spin_unlock_with_mask(GlobalBlockLock); // unlock the index, used index and registers
 	virtio_mb();
 
 	uart_printf("6\n");
@@ -222,6 +237,7 @@ uint64_t block_write(uint32_t sector, char *data, uint64_t size)
 
 	uart_printf(BLOCK_READ ": Prepared Request.");
 
+	spin_lock_with_mask(GlobalBlockLock); // lock to get free index + use index + udpate register
     int64_t free_index = -1;
     while (free_index == -1)
     {
@@ -267,6 +283,7 @@ uint64_t block_write(uint32_t sector, char *data, uint64_t size)
 	virtio_mb();
 	write_u32(virtio_obj, VIRTIO_QueueNotify, 0);
 
+	spin_unlock_with_mask(GlobalBlockLock); // unlock the index, used index and registers
 	virtio_mb();
 
 	uart_printf("6\n");
