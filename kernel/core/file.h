@@ -83,6 +83,44 @@ typedef struct _inode {
     uint64_t size;
 } Inode;
 
+
+/*
+- user space will only pass fd as a number not as file struct, inside the kerenel, we use the number to get the file struct from the process's fd table
+
+that also mean a process has to hold fd table
+
+- lets start by saying our process will only have max 12 fd, so we havve keep our size small as of now
+
+- once we have resptvice file_struct, and know the current positoin wihtin the file and how manu bytes we want read from that position
+
+- we use the inodes data table to get all the block that are used by this inode
+
+in extents, the logical block will be 0 -> n
+
+the physical block will be anything is free
+
+eg:
+
+extent 1 : 0 -> 4 : 456 -> 450
+extent 2 : 5 -> 10 : 600 -> 610
+
+
+the inode will have this extent table infor + the number of blocks alocated
+
+based onthe current index + number of bytes we want, we cna calculate the number of blocks we want to read from
+
+we need an read_iter -> this will class the filesystem specific iter function
+
+within that we get the inode of the file_struct
+
+we get i_block of the file struct, ext_header, if we parse this we ill know how max ext values are there, we may have to go through them all
+
+then finally with in the ext, we can find the logical block and the phsyical block and the count
+
+
+
+*/
+
 typedef struct _file {
     uint64_t fd; // will not be shared accross process
     Inode inode;
@@ -119,3 +157,33 @@ uint64_t init_file(File *file, file_types type)
 }
 
 #endif // ___FILE______
+
+
+/*
+
+
+
+
+
+Example: A process calls read(fd, buf, 512) to read 512 bytes starting at file offset 5000 from a file on an ext4 filesystem. 
+
+System Call & File Descriptor Lookup: The read system call is made. The VFS uses fd to find the struct file in the process's file descriptor table. 
+Get Offset: The VFS reads the current file position from struct file->f_pos. In this case, f_pos is 5000. 
+Dispatch to Filesystem: The VFS checks struct file->f_op->read_iter and calls the ext4_file_read_iter function. 
+Get Inode: The ext4_file_read_iter function gets the struct inode for the file via file->f_mapping->host. 
+Parse Extent Tree Header: The function accesses the i_block field of the struct ext4_inode. The first 12 bytes are interpreted as struct ext4_extent_header.
+eh_magic is 0xF30A (valid).
+eh_entries is 3 (three extent entries are valid).
+eh_max is 4 (can hold four entries).
+eh_depth is 0 (this is a leaf node; the extents are stored directly in the inode).
+Search Extents: The function scans the three struct ext4_extent entries that follow the header.
+Extent 1: ee_block=0, ee_len=1, ee_start=100. This maps logical blocks 0 to 0. Our target offset (5000) is greater than 4095 (1 block * 4096 bytes), so it doesn't match.
+Extent 2: ee_block=1, ee_len=1, ee_start=500. This maps logical blocks 1 to 1 (bytes 4096 to 8191). Our target offset (5000) falls within this range (4096 <= 5000 < 8192).
+Calculate Physical Block: The function has found the correct extent.
+The logical block number for offset 5000 is 5000 / 4096 = 1.
+The offset within that logical block is 5000 % 4096 = 904 bytes.
+The physical block number is ee_start (500) + (logical_block - ee_block) = 500 + (1 - 1) = 500. 
+The VFS now knows to read from physical block 500 on the disk, starting at byte 904 of that block
+
+
+*/

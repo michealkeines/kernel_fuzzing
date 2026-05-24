@@ -52,27 +52,48 @@ void user_process1(void)
 	// uart_printf("Task 1 is running\n");
 	char test[5];
 	int i = 0;
-	test[i++] = 'W';
-	test[i++] = 'W';
-	test[i++] = 'W';
-	test[i++] = 'W';
-	test[i++] = 'W';
+	test[i++] = 'A';
+	test[i++] = 'A';
+	test[i++] = 'A';
+	test[i++] = 'A';
+	test[i++] = 'A';
 	int64_t result = sys_write(1, test, 512);
 
 	// uart_printf("result of write: %l\n", result);
 
+	i = 0;
+	while (1) {
+	if (i % 100 == 0) {
+
+	// uart_printf("result of write: %l\n", result);
+	}
+		
+		i++;
 	
-	while (1) {volatile int i = 1;};
+	};
 }
+
+
+
+// TODO:
+// map all lib into the user process, find a proper way to do this, currenly only sys_write is mapped, we need to mapp lots of such libs
 
 void user_process2(void)
 {
 	// uart_printf("Task 2 is running\n");
+char test[5];
+	int i = 4;
 
+	test[i++] = 'C';
+	test[i++] = 'C';
+	test[i++] = 'C';
+	test[i++] = 'C';
+	test[i++] = 'C';
+	int64_t result = sys_write(1, test, 512);
 	while (1) {
 		
 		
-	uart_printf("Task 2 is running\n");
+	// uart_printf("Task 2 is running\n");
 
 		volatile int i = 1;};
 }
@@ -109,6 +130,7 @@ Task *init_task(int id, const char *name, void (*entry)(void), uint64_t sz)
 	// sys_write: 0x8000001, physical: 0x80001f38
 	// 0x8000001 => 0x80001f38
 	map_user_to_physical(id, (uint64_t)sys_write);
+	map_user_to_physical(id, (uint64_t)uart_printf);
 
 	Task *task = (Task *)kmalloc(sizeof(Task));
 	uart_printf("Task: %l\n", task);

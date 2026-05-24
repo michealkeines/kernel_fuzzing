@@ -31,16 +31,19 @@ uint64_t syscall_dispatcher(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_
         // because the overall size is increaing everytim i add some ccode, i have to maek the vector table address not hard coded anymore this is cause the touble , fix this first
         // here as soon as we call the kmalloc and one the l3 table locaiton is getting page fault
         // we fixed the label of vector table
-        // now as sonn as i enter into el1 from el0, the address of tables are not accessible, eg: 0x80070000, which is the L2 table, i breakout at the el0_sync_entry handler, so this is right after we jump into el1 from el0, nothing else has been touched yet
+        // now as sonn as i enter into el1 from el0, the address of tables are not accessible, eg: 0x80070000, which is the L2 table, i breakout at the el0_sync_entry handler, so this is right after we jump into el1 from el0, nothing else has been touched yet,
+        // issue is that table is used based on the address starting bit and 0x80000 work in kmain because i have filed tb0 with the entries and when i go into el0 i overwrite them and when i go back to el1, we need to write them back to fix this case fully by mapping all kernel address with upper bits set
         uint64_t read = block_write(1000, (char *)arg2, arg3);
         // uint64_t read = 0;
         uart_printf("Syscall write is done %l\n", read);
-        // char data[512];
-        // read = block_read(1000, data, 512);
-        // for (int i = 0; i < 512; i++) {
+        char data[512];
+        read = block_read(1000, data, 512);
+        for (int i = 0; i < 512; i++) {
     
-        // uart_printf("%d", data[i]);
-        // }
+        uart_printf("%d", data[i]);
+        }
+        result = read;
+        uart_printf("returing from sys_write\n");
         break;
     default:
         break;

@@ -17,7 +17,8 @@
 #define L0_BASE_PHYS   0x0000000080020000UL
 #define L1_BASE_PHYS   0x0000000080040000UL
 #define L2_BASE_PHYS   0x0000000080060000UL
-#define L2_INDEX3_BASE_PHYS   0x0000000080070000UL // this is what we use in my kmalloc
+#define L2_INDEX3_BASE_PHYS   0x0000000080080000UL // this is what we use in my kmalloc
+#define L2_BASE_PHYS_FOR_L3_ENTRIES   0x00000000800A0000UL // kmalloc l3 table entries needs a table on its wonw
 #define L3_INDEX0_BASE_PHYS 0x00000000800C0000UL 
 #define DESC_VALID         (1UL << 0)
 #define DESC_TABLE         (1UL << 1)
@@ -157,6 +158,9 @@ void mmu_init(void)
     clear_table(L2_INDEX3_BASE_PHYS);
     clear_table(L3_INDEX0_BASE_PHYS);
 
+    uint64_t l3_table_address = ((uint64_t)__block_l2_memory_start & 0x0000FFFFFFFFFFFF) + (512 * 0);
+    uint64_t l3_table_address_writable = (0xFFFF000000000000 | l3_table_address);
+
 
     // i need create identity mapping, that is why i need add entry for both va and pa
 
@@ -182,6 +186,10 @@ void mmu_init(void)
      l1_idx = calc_index_l1(PHYS_KERNEL_BASE);
      l1_desc = make_table_desc(L2_BASE_PHYS);
     set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
+    // l1_idx = calc_index_l1(l3_table_address_writable);
+    //  l1_desc = make_table_desc(L2_BASE_PHYS_FOR_L3_ENTRIES);
+    // set_table_entry((uint64_t*)L1_BASE_PHYS, l1_idx, l1_desc);
+
 
     /* ---- L2: block mapping 0x0000000080000000 → 0x80000000 ---- */
     uint64_t l2_idx = calc_index_l2(VIRT_KERNEL_BASE);
@@ -199,6 +207,11 @@ void mmu_init(void)
     uint64_t l2_desc2 = make_block_desc(PHYS_REGION_2_BASE);
     set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
 
+    // user table entreis
+    l2_idx = calc_index_l2(USER_PROCESS_1_TABLE_START_WRITABLE);
+    // uart_printf("uart l2 index: %l\n", l2_idx);
+    l2_desc2 = make_block_desc(USER_PROCESS_1_TABLE_START);
+    set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
     // l2_idx = calc_index_l2(VIRTUAL_GICC_BASE);
     // l2_desc2 = make_block_desc(GICC_BASE);
     // set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
@@ -213,10 +226,28 @@ void mmu_init(void)
     set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
 
 
+    /*
+        we have l3 table physical range, that will used by kmalloc and it need virtual address, so we need to fiil it up, here, but looks like we are overlapping lot stuff, lets back to orignal setup
+    */
+
     l2_idx = calc_index_l2(STACK_TOP);
     l2_desc2 = make_block_desc(STACK_TOP);
     set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
 
+    // int test[20];
+    // for (int i = 1; i < 20; i++)
+    // {
+    //     test[i] = 0;
+    // }
+    // for (int i = 1; i < 20; i ++) {
+    //     l3_table_address = ((uint64_t)__block_l2_memory_start & 0x0000FFFFFFFFFFFF) + (512 * i);
+    //     l3_table_address_writable = (0xFFFF00000000000 | l3_table_address);
+    //     if (test[i] != 0) continue;
+        l2_idx = calc_index_l2(l3_table_address_writable);
+        l2_desc2 = make_block_desc(l3_table_address);
+        set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
+    //     test[i] = 1;
+    // }
     // l2_idx = calc_index_l2(0x80a00000);
     // l2_desc2 = make_block_desc(PHYS_REGION_2_BASE);
     // set_table_entry((uint64_t*)L2_BASE_PHYS, l2_idx, l2_desc2);
@@ -279,50 +310,61 @@ void map_user_to_physical(uint64_t id, uint64_t address)
     // Identity map from user space to physical range
 
     uint64_t l0 = (id == 1) ? USER_PROCESS_1_TABLE_START : USER_PROCESS_2_TABLE_START; // TODO: make this dynamic in future
+    uint64_t l0_w = (id == 1) ? USER_PROCESS_1_TABLE_START_WRITABLE : USER_PROCESS_2_TABLE_START_WRITABLE; // TODO: make this dynamic in future
     uint64_t l1 = l0 + 0x00010000UL; // 1GB
     uint64_t l2 = l1 + 0x00010000UL; // 2MB
     uint64_t l3 = l2 + 0x00010000UL; // 4KB
+    uint64_t l1_w = l0_w + 0x00010000UL; // 1GB
+    uint64_t l2_w = l1_w + 0x00010000UL; // 2MB
+    uint64_t l3_w = l2_w + 0x00010000UL; // 4KB
 
     uint64_t l0_idx = calc_index_l0(address);
     uint64_t l0_desc = make_table_desc(l1);
-    set_table_entry((uint64_t*)l0, l0_idx, l0_desc);
+    set_table_entry((uint64_t*)l0_w, l0_idx, l0_desc);
 
     uint64_t l1_idx = calc_index_l1(address);
     uint64_t l1_desc = make_table_desc(l2);
-    set_table_entry((uint64_t*)l1, l1_idx, l1_desc);
+    set_table_entry((uint64_t*)l1_w, l1_idx, l1_desc);
 
     uint64_t l2_idx = calc_index_l2(address);
     uint64_t l2_desc = make_table_desc(l3);
-    set_table_entry((uint64_t*)l2, l2_idx, l2_desc);
+    set_table_entry((uint64_t*)l2_w, l2_idx, l2_desc);
 
-    uint64_t l3_idx = calc_index_l3(address);
-    uint64_t l3_desc = make_l3_block_desc(address);
-    set_table_entry((uint64_t*)l3, l3_idx, l3_desc);
+    for (int i = 0; i < 10; i++) {
+    uint64_t l3_idx = calc_index_l3(address + (4096 * i));
+    uint64_t l3_desc = make_l3_block_desc(address + (4096 * i));
+    set_table_entry((uint64_t*)l3_w, l3_idx, l3_desc);
+
+    }
 }
 void map_user_to_physical_test(uint64_t id, uint64_t address)
 {
     // Identity map from user space to physical range
 
     uint64_t l0 = (id == 1) ? USER_PROCESS_1_TABLE_START : USER_PROCESS_2_TABLE_START; // TODO: make this dynamic in future
+    uint64_t l0_w = (id == 1) ? USER_PROCESS_1_TABLE_START_WRITABLE : USER_PROCESS_2_TABLE_START_WRITABLE; // TODO: make this dynamic in future
     uint64_t l1 = l0 + 0x00010000UL; // 1GB
     uint64_t l2 = l1 + 0x00010000UL; // 2MB
     uint64_t l3 = l2 + 0x00010000UL; // 4KB
+    uint64_t l1_w = l0_w + 0x00010000UL; // 1GB
+    uint64_t l2_w = l1_w + 0x00010000UL; // 2MB
+    uint64_t l3_w = l2_w + 0x00010000UL; // 4KB
 
     uint64_t l0_idx = calc_index_l0(address);
     uint64_t l0_desc = make_table_desc(l1);
-    set_table_entry((uint64_t*)l0, l0_idx, l0_desc);
+    set_table_entry((uint64_t*)l0_w, l0_idx, l0_desc);
 
     uint64_t l1_idx = calc_index_l1(address);
     uint64_t l1_desc = make_table_desc(l2);
-    set_table_entry((uint64_t*)l1, l1_idx, l1_desc);
+    set_table_entry((uint64_t*)l1_w, l1_idx, l1_desc);
 
     uint64_t l2_idx = calc_index_l2(address);
     uint64_t l2_desc = make_table_desc(l3);
-    set_table_entry((uint64_t*)l2, l2_idx, l2_desc);
+    set_table_entry((uint64_t*)l2_w, l2_idx, l2_desc);
 
     uint64_t l3_idx = calc_index_l3(address);
     uint64_t l3_desc = make_l3_block_desc(address);
-    set_table_entry((uint64_t*)l3, l3_idx, l3_desc);
+    set_table_entry((uint64_t*)l3_w, l3_idx, l3_desc);
 }
 
 
@@ -366,6 +408,7 @@ BitIndex find_free(AllocateMem *mem)
 	uint64_t index = 0;
 	uint8_t bit = 0;
 //	printf("Starting the loop \n");
+    // this is the amout of bits we support with our bitmap array
 	for (;index <= 16385;)
 	{
 		//printf("sd\n");
@@ -561,6 +604,7 @@ bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total)
     {
         // As our physical pages start from 8000000 something, we already have table entyr for it, that covers 1GP of l1, if need more we can use L2_0 or L2_1
         uint64_t current_l2 = L2_INDEX3_BASE_PHYS;
+        uint64_t current_l2_writable = (0xFFFF000000000000 | L2_INDEX3_BASE_PHYS);
         // uint64_t current_l2 = L2_BASE_PHYS;
         // va 0xffff000000000000 => 0x000000000000000
         uint64_t current_va = va + (4096 * i);
@@ -574,10 +618,11 @@ bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total)
         // we use the block + 512 as the logic to find the index
         // if try ot alocode more there 10 l3 tables, we will get error, udpate this in linked
         uint64_t l3_table_address = ((uint64_t)__block_l2_memory_start & 0x0000FFFFFFFFFFFF) + (512 * l2_idx);
+        uint64_t l3_table_address_writable = (0xFFFF000000000000 | l3_table_address);
         // uint64_t l3_table_address = L3_INDEX0_BASE_PHYS; 
         uint64_t l2_desc = make_table_desc(l3_table_address);
 	    uart_printf("index: %l, VA: %l, L2 index: %l => %l, L3 table: %l\n", i, current_va, l2_idx, pa, l3_table_address);
-        set_table_entry((uint64_t*)current_l2, l2_idx, l2_desc);
+        set_table_entry((uint64_t*)current_l2_writable, l2_idx, l2_desc);
         // uart_printf("updated table entry for l3\n");
 
         /* 
@@ -593,7 +638,7 @@ bool map_pagetable_entry(uint64_t va, uint64_t pa, uint64_t total)
         uint64_t l3_idx = calc_index_l3(current_va);
         uart_printf("L3 index: %l\n", l3_idx);
         uint64_t l3_desc = make_l3_block_desc(physical_va);
-        set_table_entry((uint64_t*)l3_table_address, l3_idx, l3_desc);
+        set_table_entry((uint64_t*)l3_table_address_writable, l3_idx, l3_desc);
     }
 
     uart_printf("Allocated Maps\n");

@@ -135,6 +135,7 @@ el1_irq_entry:
 // retval1 x0
 // retval2 x1
 el0_sync_entry:
+    SAVE_CONTEXT
     mrs x10, ESR_EL1
     lsr x11, x10, #26
     cmp x11, #0x15
@@ -142,7 +143,7 @@ el0_sync_entry:
     // bic x8, x8, #0x000000000000ffff // take the lower 15:0 bit into x0
     mov x7, x8 // syscall number
     bl syscall_dispatcher
-    eret
+    RESTORE_AND_ERET
 
 not_syscall:
     eret
